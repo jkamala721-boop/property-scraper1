@@ -1,22 +1,16 @@
 import json
 import re
+import time
 
 from bs4 import BeautifulSoup
-from supabase import create_client
+from database import save_property, flush
 
-from config import SUPABASE_URL, SUPABASE_KEY
 
 from logger import log
+from normalize import normalize
+from extractor import extract_property
 
-
-# -----------------------------
-# SUPABASE
-# -----------------------------
 import requests
-supabase = create_client(
-    SUPABASE_URL,
-    SUPABASE_KEY
-)
 
 
 # -----------------------------
@@ -67,142 +61,6 @@ def check_listing_alive(url):
 
         return False
 
-
-# -----------------------------
-# EXTRACT PROPERTY
-# -----------------------------
-
-def extract_property(graph,
-listing_type):
-
-    data = {}
-
-    product = None
-    accommodation = None
-    listing = None
-    agent = None
-
-    for item in graph:
-
-        t = item.get("@type")
-
-        if t == "Product":
-            product = item
-
-        elif t == "Accommodation":
-            accommodation = item
-
-        elif t == "RealEstateListing":
-            listing = item
-
-        elif t == "RealEstateAgent":
-            agent = item
-
-
-    title = ""
-
-    if product:
-        title = product.get("name", "")
-
-    data["title"] = title
-
-    if product:
-        data["description"] = product.get("description")
-
-
-    if accommodation:
-
-        data["bedrooms"] = accommodation.get(
-            "numberOfBedrooms"
-        )
-
-        data["bathrooms"] = accommodation.get(
-            "numberOfBathroomsTotal"
-        )
-
-
-    # PRICE
-
-    m = re.search(r"KSh\s*([\d,]+)", title)
-
-    if m:
-
-        data["price"] = int(
-            m.group(1).replace(",", "")
-        )
-
-        data["currency"] = "KES"
-
-    else:
-
-        data["price"] = None
-        data["currency"] = None
-
-
-    # LOCATION
-
-    m = re.search(
-        r"in\s+(.+?)\s+for",
-        title
-    )
-
-    if m:
-        data["location"] = m.group(1)
-
-    else:
-        data["location"] = None
-
-
-    # LISTING ID
-
-    m = re.search(r"(\d+)$", url)
-
-    if m:
-        data["listing_id"] = m.group(1)
-
-
-    # SOURCE
-
-    data["source"] = "BuyRentKenya"
-
-    data["listing_type"] = listing_type
-
-    data["url"] = url
-
-
-    # STATUS
-
-    if listing:
-
-        data["posted_date"] = listing.get(
-            "datePublished"
-        )
-
-        data["last_updated"] = listing.get(
-            "dateModified"
-        )
-
-        data["is_live"] = True
-
-    else:
-
-        data["is_live"] = False
-
-
-    # AGENT
-
-    if agent:
-
-        data["agent_name"] = agent.get("name")
-
-    else:
-
-        data["agent_name"] = None
-
-
-    return data
-
-
 # -----------------------------
 # MAIN
 # -----------------------------
@@ -215,54 +73,87 @@ for listing_type, url in records:
     if not check_listing_alive(url):
 
         log(f"Listing not available: {url}")
+        continue
 
+    # Download page with retry
+    for attempt in range(3):
+
+        try:
+
+            response = requests.get(
+                url,
+                headers=headers,
+                timeout=30
+            )
+
+            break
+
+        except requests.exceptions.RequestException as e:
+
+            print(f"Request failed (attempt {attempt + 1}): {e}")
+
+            time.sleep(5)
+
+    else:
+
+        log(f"Skipping {url} after 3 failed attempts")
         continue
 
 
-    response = requests.get(
-        url,
-        headers=headers
-    )
-
     soup = BeautifulSoup(
-        response.text,
+     response.text,
         "html.parser"
-    )
+)
 
     scripts = soup.find_all(
-        "script",
+     "script",
         type="application/ld+json"
-    )
+)   
 
     for script in scripts:
 
         if not script.string:
-            continue
+         continue
 
         try:
+         obj = json.loads(script.string)
 
-            obj = json.loads(script.string)
+        except Exception:
+           continue
 
-        except:
+    graph = obj.get("@graph")
 
-            continue
+    if not graph:
+        continue
 
-        graph = obj.get("@graph")
+    print("Found @graph")
 
-        if not graph:
-            continue
+    raw_property = extract_property(graph, listing_type, url)
 
-        result = extract_property(graph,
-                listing_type)
+    print("✅ extract_property() finished")
 
-        print("\nPROPERTY")
-        print("----------------")
+    clean_property = normalize(raw_property)
 
-        for k, v in result.items():
-            print(k, ":", v)
+    print("✅ normalize() finished")
 
-        supabase.table("properties").upsert(result).execute()
+    print("\nNORMALIZED PROPERTY")
+    print("----------------")
 
-        log(f"Saved property {result['listing_id']}")
+    for k, v in clean_property.items():
+     print(k, ":", v)
 
-        break
+    print("✅ About to save property")
+
+    save_property(clean_property)
+
+print("\nRAW PROPERTY")
+print("----------------")
+
+for k, v in raw_property.items():
+    print(k, ":", v)
+
+print(f"Extracted listing {raw_property['listing_id']}")
+
+print("\nNormalizing property...")
+    
+flush()
