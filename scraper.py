@@ -3,7 +3,12 @@ import re
 import time
 
 from bs4 import BeautifulSoup
-from database import save_property, flush
+from database import (
+    save_property,
+    flush,
+    start_scrape_run,
+    finish_scrape_run
+)
 
 
 from logger import log
@@ -61,6 +66,10 @@ def check_listing_alive(url):
 
         return False
 
+start_scrape_run()
+
+properties_found = 0
+
 # -----------------------------
 # MAIN
 # -----------------------------
@@ -110,25 +119,33 @@ for listing_type, url in records:
         type="application/ld+json"
 )   
 
+    graph = None
+
     for script in scripts:
 
         if not script.string:
-         continue
+            continue
 
         try:
          obj = json.loads(script.string)
 
         except Exception:
-           continue
+         continue
 
-    graph = obj.get("@graph")
+        possible_graph = obj.get("@graph")
+
+        if possible_graph:
+            graph = possible_graph
+            break
 
     if not graph:
-        continue
+         continue
 
     print("Found @graph")
 
     raw_property = extract_property(graph, listing_type, url)
+    
+    properties_found += 1
 
     print("✅ extract_property() finished")
 
@@ -145,15 +162,25 @@ for listing_type, url in records:
     print("✅ About to save property")
 
     save_property(clean_property)
-
-print("\nRAW PROPERTY")
-print("----------------")
-
-for k, v in raw_property.items():
-    print(k, ":", v)
-
-print(f"Extracted listing {raw_property['listing_id']}")
-
-print("\nNormalizing property...")
     
 flush()
+
+if properties_found == len(records):
+
+    print(
+        f"✅ Full scrape completed: "
+        f"{properties_found}/{len(records)} properties"
+    )
+
+    finish_scrape_run(properties_found)
+
+else:
+
+    print(
+        f"⚠️ Scrape incomplete: "
+        f"{properties_found}/{len(records)} properties"
+    )
+
+    print(
+        "Properties will NOT be marked inactive."
+    )

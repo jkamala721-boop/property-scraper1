@@ -43,6 +43,43 @@ listing_type, url):
     if product:
         data["description"] = product.get("description")
 
+        # IMAGES
+        images = product.get("image", [])
+
+        image_urls = []
+
+        if isinstance(images, list):
+
+            for image in images:
+
+                if isinstance(image, dict):
+                    image_url = image.get("@id")
+
+                elif isinstance(image, str):
+                    image_url = image
+
+                else:
+                    image_url = None
+
+                if image_url:
+                    image_urls.append(image_url)
+
+        elif isinstance(images, dict):
+
+            image_url = images.get("@id")
+
+            if image_url:
+                image_urls.append(image_url)
+
+        elif isinstance(images, str):
+
+            image_urls.append(images)
+
+        data["image_urls"] = image_urls
+
+    else:
+        data["description"] = None
+        data["image_urls"] = []
 
     if accommodation:
 

@@ -11,22 +11,116 @@ supabase = create_client(
     SUPABASE_KEY
 )
 
-BATCH_SIZE = 100
-batch = []
 
+# -----------------------------
+# GLOBAL STATE
+# -----------------------------
+
+current_run_id = None
+current_run_started_at = None
+
+BATCH_SIZE = 100
+
+batch = []
+image_batch = []
+run_property_batch = []
+
+
+# -----------------------------
+# START SCRAPE RUN
+# -----------------------------
+
+def start_scrape_run():
+
+    global current_run_id
+    global current_run_started_at
+
+    result = (
+        supabase
+        .table("scrape_runs")
+        .insert({
+            "source": "BuyRentKenya",
+            "status": "running"
+        })
+        .execute()
+    )
+
+    current_run_id = result.data[0]["id"]
+    current_run_started_at = result.data[0]["started_at"]
+
+    print(f"Scrape run started: {current_run_id}")
+
+    return current_run_id
+
+
+# -----------------------------
+# SAVE PROPERTY
+# -----------------------------
 
 def save_property(property_data):
 
+    image_urls = property_data.pop(
+        "image_urls",
+        []
+    )
+
+    listing_id = property_data.get(
+        "listing_id"
+    )
+
+    # Record when this property was seen
+    property_data["last_seen_at"] = "now()"
+
     batch.append(property_data)
 
-    print(f"Batch size = {len(batch)}")
+    # Record property in current scrape snapshot
+    if (
+        current_run_id is not None
+        and listing_id is not None
+    ):
+
+        run_property_batch.append({
+            "run_id": current_run_id,
+            "source": "BuyRentKenya",
+            "listing_id": int(listing_id)
+        })
+
+    # Collect images
+    for order, image_url in enumerate(image_urls):
+
+        image_batch.append({
+            "listing_id": listing_id,
+            "image_url": image_url,
+            "image_order": order
+        })
+
+    print(
+        f"Batch size = {len(batch)}"
+    )
+
+    print(
+        f"Images collected = {len(image_batch)}"
+    )
+
+    print(
+        f"Snapshot properties = "
+        f"{len(run_property_batch)}"
+    )
 
     if len(batch) >= BATCH_SIZE:
+
         upload_batch()
+
+
+# -----------------------------
+# UPLOAD BATCH
+# -----------------------------
 
 def upload_batch():
 
     global batch
+    global image_batch
+    global run_property_batch
 
     if not batch:
         return
@@ -35,24 +129,329 @@ def upload_batch():
 
         try:
 
-            print(f"Uploading {len(batch)} properties...")
+            print(
+                f"Uploading {len(batch)} "
+                f"properties..."
+            )
 
-            supabase.table("properties").upsert(batch).execute()
+            # -------------------------
+            # PROPERTIES
+            # -------------------------
 
-            log(f"Uploaded {len(batch)} properties")
+            supabase.table(
+                "properties"
+            ).upsert(
+                batch,
+                on_conflict="source,listing_id"
+            ).execute()
+
+            log(
+                f"Uploaded {len(batch)} "
+                f"properties"
+            )
+
+
+            # -------------------------
+            # IMAGES
+            # -------------------------
+
+            if image_batch:
+
+                supabase.table(
+                    "property_images"
+                ).upsert(
+                    image_batch,
+                    on_conflict="listing_id,image_url"
+                ).execute()
+
+                log(
+                    f"Uploaded {len(image_batch)} "
+                    f"images"
+                )
+
+
+            # -------------------------
+            # SCRAPE SNAPSHOT
+            # -------------------------
+
+            if run_property_batch:
+
+                supabase.table(
+                    "scrape_run_properties"
+                ).upsert(
+                    run_property_batch,
+                    on_conflict=(
+                        "run_id,source,listing_id"
+                    )
+                ).execute()
+
+                log(
+                    f"Recorded "
+                    f"{len(run_property_batch)} "
+                    f"properties for scrape run"
+                )
+
+
+            # -------------------------
+            # CLEAR BATCHES
+            # -------------------------
 
             batch.clear()
+            image_batch.clear()
+            run_property_batch.clear()
 
             return
 
+
         except Exception as e:
 
-            print(f"Upload failed (attempt {attempt + 1}): {e}")
+            print(
+                f"Upload failed "
+                f"(attempt {attempt + 1}): {e}"
+            )
 
             time.sleep(10)
 
-    log("Batch upload failed after 3 attempts")
 
+    log(
+        "Batch upload failed after 3 attempts"
+    )
+
+
+# -----------------------------
+# MARK MISSING PROPERTIES
+# -----------------------------
+
+def mark_missing_properties_inactive(
+    previous_run_id,
+    current_run_id
+):
+
+    print(
+        "Checking for properties that "
+        "disappeared from the previous "
+        "scrape..."
+    )
+
+
+    # -----------------------------
+    # GET PREVIOUS SNAPSHOT
+    # -----------------------------
+
+    previous_result = (
+        supabase
+        .table("scrape_run_properties")
+        .select("listing_id")
+        .eq("run_id", previous_run_id)
+        .eq("source", "BuyRentKenya")
+        .execute()
+    )
+
+    previous_ids = {
+        int(row["listing_id"])
+        for row in previous_result.data
+    }
+
+
+    # -----------------------------
+    # GET CURRENT SNAPSHOT
+    # -----------------------------
+
+    current_result = (
+        supabase
+        .table("scrape_run_properties")
+        .select("listing_id")
+        .eq("run_id", current_run_id)
+        .eq("source", "BuyRentKenya")
+        .execute()
+    )
+
+    current_ids = {
+        int(row["listing_id"])
+        for row in current_result.data
+    }
+
+
+    # -----------------------------
+    # FIND DISAPPEARED LISTINGS
+    # -----------------------------
+
+    missing_ids = (
+        previous_ids - current_ids
+    )
+
+
+    if not missing_ids:
+
+        print(
+            "No properties disappeared."
+        )
+
+        return
+
+
+    print(
+        f"Found {len(missing_ids)} "
+        f"properties missing from "
+        f"current scrape."
+    )
+
+
+    # -----------------------------
+    # UPDATE IN CHUNKS
+    # -----------------------------
+
+    missing_ids = list(missing_ids)
+
+    chunk_size = 500
+
+    for i in range(
+        0,
+        len(missing_ids),
+        chunk_size
+    ):
+
+        chunk = missing_ids[
+            i:i + chunk_size
+        ]
+
+        (
+            supabase
+            .table("properties")
+            .update({
+                "is_live": "false"
+            })
+            .eq(
+                "source",
+                "BuyRentKenya"
+            )
+            .in_(
+                "listing_id",
+                chunk
+            )
+            .execute()
+        )
+
+        print(
+            f"Marked {len(chunk)} "
+            f"properties inactive."
+        )
+
+
+    print(
+        "Inactive-property update "
+        "completed."
+    )
+
+
+# -----------------------------
+# FINISH SCRAPE RUN
+# -----------------------------
+
+def finish_scrape_run(
+    properties_found
+):
+
+    global current_run_id
+    global current_run_started_at
+
+    if current_run_id is None:
+
+        return
+
+
+    completed_run_id = current_run_id
+
+
+    # -----------------------------
+    # FIND PREVIOUS COMPLETED RUN
+    # -----------------------------
+
+    previous_result = (
+        supabase
+        .table("scrape_runs")
+        .select("id")
+        .eq(
+            "source",
+            "BuyRentKenya"
+        )
+        .eq(
+            "status",
+            "completed"
+        )
+        .order(
+            "id",
+            desc=True
+        )
+        .limit(1)
+        .execute()
+    )
+
+
+    previous_run_id = None
+
+    if previous_result.data:
+
+        previous_run_id = (
+            previous_result.data[0]["id"]
+        )
+
+
+    # -----------------------------
+    # MARK CURRENT RUN COMPLETED
+    # -----------------------------
+
+    (
+        supabase
+        .table("scrape_runs")
+        .update({
+            "finished_at": "now()",
+            "completed_at": "now()",
+            "status": "completed",
+            "properties_found": properties_found
+        })
+        .eq(
+            "id",
+            completed_run_id
+        )
+        .execute()
+    )
+
+
+    print(
+        f"Scrape run {completed_run_id} "
+        f"completed with "
+        f"{properties_found} properties"
+    )
+
+
+    # -----------------------------
+    # INACTIVE CHECK
+    # -----------------------------
+
+    if previous_run_id is None:
+
+        print(
+            "This is the first completed "
+            "snapshot. No properties will "
+            "be marked inactive."
+        )
+
+    else:
+
+        mark_missing_properties_inactive(
+            previous_run_id,
+            completed_run_id
+        )
+
+
+    current_run_id = None
+    current_run_started_at = None
+
+
+# -----------------------------
+# FLUSH
+# -----------------------------
 
 def flush():
 
