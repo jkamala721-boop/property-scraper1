@@ -602,6 +602,58 @@ def fail_scrape_run(
     current_run_started_at = None
 
 # -----------------------------
+# APARTMENT IDENTITY
+# -----------------------------
+
+def ensure_apartment_identity(source, listing_id):
+
+    # Check whether this listing is already connected
+    existing = (
+        supabase
+        .table("apartment_listings")
+        .select("apartment_id")
+        .eq("source", source)
+        .eq("listing_id", int(listing_id))
+        .limit(1)
+        .execute()
+    )
+
+    if existing.data:
+        return existing.data[0]["apartment_id"]
+
+    # Create a new apartment identity
+    apartment = (
+        supabase
+        .table("apartments")
+        .insert({})
+        .execute()
+    )
+
+    apartment_id = apartment.data[0]["id"]
+    apartment_code = apartment.data[0]["apartment_code"]
+
+    # Connect the listing to the apartment
+    (
+        supabase
+        .table("apartment_listings")
+        .insert({
+            "apartment_id": apartment_id,
+            "source": source,
+            "listing_id": int(listing_id),
+            "match_status": "unmatched"
+        })
+        .execute()
+    )
+
+    print(
+        f"Created apartment identity "
+        f"{apartment_code} for "
+        f"{source} listing {listing_id}"
+    )
+
+    return apartment_id
+
+# -----------------------------
 # FLUSH
 # -----------------------------
 

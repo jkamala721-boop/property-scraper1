@@ -9,7 +9,8 @@ from database import (
     start_scrape_run,
     finish_scrape_run,
     fail_scrape_run,
-    record_price_history
+    record_price_history,
+    ensure_apartment_identity
 )
 
 
@@ -46,7 +47,7 @@ headers = {
     "User-Agent": "Mozilla/5.0"
 }
 
-#records = records[:1]
+#records = records[1:2]
 
 
 # -----------------------------
@@ -174,6 +175,11 @@ def main():
         save_property(clean_property)
 
         record_price_history(clean_property)
+        
+        ensure_apartment_identity(
+        clean_property["source"],
+        clean_property["listing_id"]
+        )
 
 
     flush()
