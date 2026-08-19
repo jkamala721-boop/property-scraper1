@@ -111,6 +111,44 @@ def save_property(property_data):
 
         upload_batch()
 
+# -----------------------------
+# RECORD PRICE HISTORY
+# -----------------------------
+
+def record_price_history(property_data):
+
+    listing_id = property_data.get("listing_id")
+    price = property_data.get("price")
+    currency = property_data.get("currency")
+
+    if (
+        current_run_id is None
+        or listing_id is None
+        or price is None
+    ):
+        return
+
+    price_history = {
+        "source": "BuyRentKenya",
+        "listing_id": int(listing_id),
+        "price": int(price),
+        "currency": currency,
+        "scrape_run_id": current_run_id
+    }
+
+    (
+        supabase
+        .table("property_price_history")
+        .upsert(
+            price_history,
+            on_conflict=(
+                "source,"
+                "listing_id,"
+                "scrape_run_id"
+            )
+        )
+        .execute()
+    )
 
 # -----------------------------
 # UPLOAD BATCH
@@ -214,6 +252,10 @@ def upload_batch():
 
 
     log(
+        "Batch upload failed after 3 attempts"
+    )
+
+    raise RuntimeError(
         "Batch upload failed after 3 attempts"
     )
 
@@ -349,7 +391,8 @@ def mark_missing_properties_inactive(
 # -----------------------------
 
 def finish_scrape_run(
-    properties_found
+    properties_found,
+    expected_properties
 ):
 
     global current_run_id
@@ -358,7 +401,79 @@ def finish_scrape_run(
     if current_run_id is None:
 
         return
+    
+    if properties_found != expected_properties:
 
+        print(
+            f"Scrape incomplete: "
+            f"{properties_found}/"
+            f"{expected_properties} properties processed."
+        )
+
+        (
+            supabase
+            .table("scrape_runs")
+            .update({
+            "finished_at": "now()",
+            "status": "incomplete",
+            "properties_found": properties_found
+            })
+            .eq(
+                "id",
+                current_run_id
+            )
+            .execute()
+        )
+
+        current_run_id = None
+        current_run_started_at = None
+
+        return
+
+    snapshot_result = (
+        supabase
+        .table("scrape_run_properties")
+        .select("listing_id")
+        .eq(
+            "run_id",
+            current_run_id
+        )
+        .eq(
+            "source",
+            "BuyRentKenya"
+        )
+        .execute()
+    )
+
+    snapshot_count = len(snapshot_result.data)
+
+    if snapshot_count != expected_properties:
+
+        print(
+            f"Snapshot incomplete: "
+            f"{snapshot_count}/"
+            f"{expected_properties} properties persisted."
+        )
+
+        (
+            supabase
+            .table("scrape_runs")
+            .update({
+                "finished_at": "now()",
+                "status": "incomplete",
+                "properties_found": properties_found
+            })
+            .eq(
+                "id",
+                current_run_id
+            )
+            .execute()
+        )
+
+        current_run_id = None
+        current_run_started_at = None
+
+        return
 
     completed_run_id = current_run_id
 
@@ -448,6 +563,43 @@ def finish_scrape_run(
     current_run_id = None
     current_run_started_at = None
 
+# -----------------------------
+# FAIL SCRAPE RUN
+# -----------------------------
+
+def fail_scrape_run(
+    error_message,
+    properties_found
+):
+
+    global current_run_id
+    global current_run_started_at
+
+    if current_run_id is None:
+        return
+
+    (
+        supabase
+        .table("scrape_runs")
+        .update({
+            "finished_at": "now()",
+            "status": "failed",
+            "properties_found": properties_found
+        })
+        .eq(
+            "id",
+            current_run_id
+        )
+        .execute()
+    )
+
+    print(
+        f"Scrape run {current_run_id} failed: "
+        f"{error_message}"
+    )
+
+    current_run_id = None
+    current_run_started_at = None
 
 # -----------------------------
 # FLUSH

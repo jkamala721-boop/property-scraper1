@@ -7,7 +7,9 @@ from database import (
     save_property,
     flush,
     start_scrape_run,
-    finish_scrape_run
+    finish_scrape_run,
+    fail_scrape_run,
+    record_price_history
 )
 
 
@@ -25,6 +27,8 @@ import requests
 #with open("links.txt", "r") as f:
 records = []
 
+properties_found = 0
+
 with open("links.txt", "r") as f:
 
     for line in f:
@@ -41,6 +45,8 @@ with open("links.txt", "r") as f:
 headers = {
     "User-Agent": "Mozilla/5.0"
 }
+
+#records = records[:1]
 
 
 # -----------------------------
@@ -66,121 +72,130 @@ def check_listing_alive(url):
 
         return False
 
-start_scrape_run()
+def main():
 
-properties_found = 0
+    global properties_found
 
-# -----------------------------
-# MAIN
-# -----------------------------
-for listing_type, url in records:
+    properties_found = 0
 
-    print("\n==========================")
-    log(f"Scraping: {url}")
-    print("==========================")
+    start_scrape_run()
 
-    if not check_listing_alive(url):
+    # -----------------------------
+    # MAIN
+    # -----------------------------
+    for listing_type, url in records:
 
-        log(f"Listing not available: {url}")
-        continue
+        print("\n==========================")
+        log(f"Scraping: {url}")
+        print("==========================")
 
-    # Download page with retry
-    for attempt in range(3):
+        if not check_listing_alive(url):
 
-        try:
-
-            response = requests.get(
-                url,
-                headers=headers,
-                timeout=30
-            )
-
-            break
-
-        except requests.exceptions.RequestException as e:
-
-            print(f"Request failed (attempt {attempt + 1}): {e}")
-
-            time.sleep(5)
-
-    else:
-
-        log(f"Skipping {url} after 3 failed attempts")
-        continue
-
-
-    soup = BeautifulSoup(
-     response.text,
-        "html.parser"
-)
-
-    scripts = soup.find_all(
-     "script",
-        type="application/ld+json"
-)   
-
-    graph = None
-
-    for script in scripts:
-
-        if not script.string:
+            log(f"Listing not available: {url}")
             continue
 
-        try:
-         obj = json.loads(script.string)
+        # Download page with retry
+        for attempt in range(3):
 
-        except Exception:
-         continue
+            try:
 
-        possible_graph = obj.get("@graph")
+                response = requests.get(
+                    url,
+                    headers=headers,
+                    timeout=30
+                )
 
-        if possible_graph:
-            graph = possible_graph
-            break
+                break
 
-    if not graph:
-         continue
+            except requests.exceptions.RequestException as e:
 
-    print("Found @graph")
+                print(f"Request failed (attempt {attempt + 1}): {e}")
 
-    raw_property = extract_property(graph, listing_type, url)
-    
-    properties_found += 1
+                time.sleep(5)
 
-    print("✅ extract_property() finished")
+        else:
 
-    clean_property = normalize(raw_property)
+            log(f"Skipping {url} after 3 failed attempts")
+            continue
 
-    print("✅ normalize() finished")
 
-    print("\nNORMALIZED PROPERTY")
-    print("----------------")
-
-    for k, v in clean_property.items():
-     print(k, ":", v)
-
-    print("✅ About to save property")
-
-    save_property(clean_property)
-    
-flush()
-
-if properties_found == len(records):
-
-    print(
-        f"✅ Full scrape completed: "
-        f"{properties_found}/{len(records)} properties"
+        soup = BeautifulSoup(
+         response.text,
+            "html.parser"
     )
 
-    finish_scrape_run(properties_found)
+        scripts = soup.find_all(
+         "script",
+            type="application/ld+json"
+    )   
 
-else:
+        graph = None
+
+        for script in scripts:
+
+            if not script.string:
+                continue
+
+            try:
+             obj = json.loads(script.string)
+
+            except Exception:
+             continue
+
+            possible_graph = obj.get("@graph")
+
+            if possible_graph:
+                graph = possible_graph
+                break
+
+        if not graph:
+             continue
+
+        print("Found @graph")
+
+        raw_property = extract_property(graph, listing_type, url)
+
+        properties_found += 1
+
+        print("✅ extract_property() finished")
+
+        clean_property = normalize(raw_property)
+
+        print("✅ normalize() finished")
+
+        print("\nNORMALIZED PROPERTY")
+        print("----------------")
+
+        for k, v in clean_property.items():
+         print(k, ":", v)
+
+        print("✅ About to save property")
+
+        save_property(clean_property)
+
+        record_price_history(clean_property)
+
+
+    flush()
 
     print(
-        f"⚠️ Scrape incomplete: "
-        f"{properties_found}/{len(records)} properties"
+        f"Scrape finished: "
+        f"{properties_found}/{len(records)} properties processed."
     )
 
-    print(
-        "Properties will NOT be marked inactive."
+    finish_scrape_run(
+        properties_found,
+        len(records)
     )
+
+
+if __name__ == "__main__":
+
+    try:
+        main()
+    except Exception as e:
+        fail_scrape_run(
+            str(e),
+            properties_found
+        )
+        raise
