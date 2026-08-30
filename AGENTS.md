@@ -60,6 +60,7 @@ The project has working functionality for:
 - listing-derived building_entities table
 - apartment_building_entities relationship table
 - deterministic Building Matching V1 dry-run and explicit candidate-write workflow
+- deterministic Building Entity Discovery V1 dry-run and explicit candidate-write workflow
 
 Known historical scraper checkpoint:
 
@@ -174,6 +175,17 @@ Reference evidence may come from confirmed relationships or from candidate
 relationships explicitly marked `manual_multi_signal_review` at the minimum
 confidence threshold. Automated candidates must never recursively seed more
 automated candidates.
+
+Building Entity Discovery V1 is a separate, explicit workflow. It extracts
+explicit development/building names from an explicit sample of at most 50
+listings, groups normalized variants, compares them with existing
+`building_entities`, and emits `create_candidate`, `existing_entity`, `review`,
+or `abstain`. Dry-run is read-only. Write mode re-reads the bounded production
+sample, creates only eligible `create_candidate` entities at confidence 0.85 or
+higher, and adds candidate relationships with method
+`entity_discovery_v1_auto`. It must not fabricate tower/block precision from
+development-level evidence. Automated discovery relationships cannot seed
+Building Matching V1 reference evidence.
 
 ### B. Canonical / enriched building information
 
@@ -384,9 +396,8 @@ The immediate engineering priority is:
 
 1. inspect repository and production schema
 2. reconcile these updated docs with actual code/database
-3. review and calibrate the deterministic Building Matching V1 dry run
-4. validate the explicit, conservative Building Matching V1 candidate-write
-   workflow on small reviewed samples before any wider run
+3. validate Building Entity Discovery V1 writes on small reviewed samples
+4. keep automatic discovery bounded and conservative before any wider run
 5. preserve the separate canonical buildings enrichment layer
 6. continue Stage 1 launch work without over-engineering pre-launch systems
 

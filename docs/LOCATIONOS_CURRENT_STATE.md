@@ -340,6 +340,42 @@ Only confirmed relationships, or manually reviewed candidates using
 reference evidence. High-confidence automated candidates are intentionally
 excluded to prevent recursive confidence propagation.
 
+## 15. Building Entity Discovery V1 — DETERMINISTIC BOUNDED WRITE WORKFLOW
+
+An isolated discovery module evaluates an explicit sample of at most
+50 listings. It extracts explicit development/building-name evidence, groups
+normalized case and punctuation variants, incorporates location, road,
+landmark, agent, and repeated-listing support, and compares proposals with
+existing `building_entities`.
+
+Output actions are `create_candidate`, `existing_entity`, `review`, or
+`abstain`. A very strong single listing needs explicit naming plus corroborating
+location/address evidence; otherwise compatible repeated listings are required.
+Neighborhood-only names, roads, generic property/marketing phrases, and
+conflicting locations cannot become automatic creation proposals. Every result
+retains a warning when tower/block granularity is not established.
+
+Dry-run mode performs no writes. Explicit write mode requires live listing IDs,
+re-reads the bounded evidence, and creates only `create_candidate` entities at
+confidence 0.85 or higher after an immediate normalized/similar-entity recheck.
+The database generates `building_code`; `canonical_building_id` remains NULL.
+Individually supported apartments are linked as `candidate` with method
+`entity_discovery_v1_auto`, using structured JSONB evidence and the existing
+unique apartment/entity constraint for idempotency. Automated discovery
+relationships cannot seed Building Matching V1 reference evidence. Discovery
+is not connected to the scraper.
+
+First controlled production checkpoint:
+
+- `BENT-000003` / `Capital Garden` is the first automatically created
+  provisional entity.
+- Apartments `8`, `1063`, and `1026` are linked as `candidate` using
+  `entity_discovery_v1_auto` with structured discovery evidence.
+- `canonical_building_id` remains NULL.
+- Existing `BENT-000002` / `Garden City` remains unchanged.
+- Canonical `buildings` and `apartment_buildings` remain empty at this
+  time-sensitive checkpoint.
+
 Current design findings:
 
 Data analysis showed:
@@ -366,7 +402,7 @@ Later matching can use:
 - public canonical building data
 - AI matching
 
-## 15. Public Building Enrichment Strategy — PLANNED
+## 16. Public Building Enrichment Strategy — PLANNED
 
 LocationOS should later collect actual building/development information from approved public sources.
 
@@ -394,7 +430,7 @@ properties
 → canonical_building_id
 → buildings
 
-## 16. Additional Source Strategy — PLANNED
+## 17. Additional Source Strategy — PLANNED
 
 Property24 and HassConsult are intentionally deferred.
 
@@ -402,7 +438,7 @@ They should be built as separate ingestion modules and later connect through the
 
 Do not make their future integration disturb the existing BuyRentKenya pipeline.
 
-## 17. Direct User Listings — LAUNCH / POST-LAUNCH PRIORITY
+## 18. Direct User Listings — LAUNCH / POST-LAUNCH PRIORITY
 
 LocationOS should eventually allow users/agents/owners to submit listings directly.
 
@@ -412,21 +448,20 @@ reduce dependence on scraped portals and improve data completeness/quality.
 
 AI normalization can later help standardize direct and scraped submissions while preserving raw source evidence.
 
-## 18. Current Development Priority
+## 19. Current Development Priority
 
 Immediate next work:
 
 1. inspect actual repository and production schema
 2. update/reconcile documentation with actual state
-3. review and calibrate Building Matching V1 dry-run results
-4. validate the conservative write workflow on small reviewed samples before
-   any wider run
+3. validate Building Entity Discovery V1 writes on small reviewed samples
+4. keep discovery inputs explicitly bounded before any wider run
 5. preserve buildings as canonical/enriched information
 6. continue through Stage 1 launch-critical intelligence
 
 Do not spend pre-launch time perfecting every source-data deficiency.
 
-## 19. Not Yet Launch-Complete
+## 20. Not Yet Launch-Complete
 
 Still important before/around first public launch:
 

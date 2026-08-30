@@ -216,6 +216,16 @@ unambiguous strong candidates as `candidate` rows with method
 `deterministic_v1_auto`. It never updates an existing pair. The unique
 `(apartment_id, building_entity_id)` constraint is the final idempotency guard.
 
+Building Entity Discovery V1 normalizes proposed names before duplicate
+comparison and produces dry-run actions and evidence reports. Its explicit,
+bounded write mode re-reads existing entities immediately before insertion and
+creates only eligible `create_candidate` rows at confidence 0.85 or higher.
+Supported apartments receive `candidate` relationships with method
+`entity_discovery_v1_auto` and structured JSONB evidence. The database generates
+`building_code`; `canonical_building_id` remains NULL. Relationship upserts use
+the existing unique `(apartment_id, building_entity_id)` constraint as their
+final idempotency guard. No canonical-building data is created or changed.
+
 ## 8. Recommended Relationship Model
 
 Conceptual target:

@@ -205,6 +205,27 @@ explicitly manual `manual_multi_signal_review` candidates above the minimum
 confidence threshold. Automated candidates cannot become reference evidence,
 preventing recursive confidence propagation.
 
+### 8.1 Building Entity Discovery
+
+Building Entity Discovery V1 is implemented as a separate deterministic
+dry-run and explicit-write workflow. It asks whether an explicit, distinctive
+development or building name can be extracted from listing evidence before
+that entity exists.
+It uses explicit title/description phrases, heading/name patterns,
+location/address context, landmarks, and compatible repetition across an
+explicit sample of at most 50 listings.
+
+Names are normalized before comparison with existing `building_entities` so
+case and punctuation variants do not create duplicates. Generic neighborhoods,
+roads, listing language, and marketing phrases are rejected. Conflicting
+location context produces review rather than a merged entity. V1 reports
+development/project-level uncertainty. Its bounded write mode re-reads the
+selected listings, re-checks existing normalized/similar entities, and creates
+only eligible `create_candidate` rows at confidence 0.85 or higher. It then
+adds individually supported apartment relationships as `candidate` with method
+`entity_discovery_v1_auto`. It never creates canonical `buildings`, and these
+automated relationships cannot seed Building Matching V1 reference evidence.
+
 ## 9. Normalization and AI Enrichment
 
 Current deterministic normalization remains valuable and should not be removed casually.

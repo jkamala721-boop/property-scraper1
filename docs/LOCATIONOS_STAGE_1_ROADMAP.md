@@ -118,6 +118,23 @@ Only confirmed relationships or sufficiently confident candidates explicitly
 marked `manual_multi_signal_review` may seed reference evidence. Automated
 candidate output cannot recursively seed later matches.
 
+### Building Entity Discovery V1 — BOUNDED WRITE WORKFLOW IMPLEMENTED
+
+The isolated discovery workflow extracts explicit development/building-name
+evidence from an explicit sample of at most 50 listings, groups normalized name
+variants, rejects generic neighborhoods and marketing phrases, checks existing
+entities, and reports creation candidates, existing entities, review cases, or
+abstentions. Conflicting locations do not merge. Development-level evidence
+does not fabricate tower/block identity. Explicit write mode creates only
+eligible `create_candidate` entities at confidence 0.85 or higher after a fresh
+duplicate recheck, then adds individually supported candidate relationships
+with method `entity_discovery_v1_auto`. It never writes canonical buildings,
+and automatic discovery relationships cannot seed matching reference evidence.
+
+The first controlled production write created `BENT-000003` / `Capital Garden`
+and candidate relationships for apartments `8`, `1063`, and `1026`. Canonical
+building tables were not changed.
+
 ### Canonical Building Enrichment — LATER / PRE-LAUNCH OR POST-LAUNCH
 
 Scrape/collect actual building/development information from approved public sources.
@@ -227,8 +244,8 @@ Listing collection
 
 Current next milestone:
 
-Validate Building Matching V1 candidate writes on small reviewed samples
-→ calibrate before any wider run
+Validate Building Entity Discovery V1 writes on small reviewed samples
+→ keep automatic discovery explicitly bounded before any wider run
 → Canonical Building Enrichment
 → Location / Basic Metrics
 → Product UI
