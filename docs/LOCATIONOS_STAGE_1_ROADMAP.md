@@ -1,783 +1,223 @@
-# LocationOS Stage 1 Roadmap
+# LocationOS Stage 1 Roadmap — Updated 2026-08-30
 
 ## Stage 1 Objective
 
-Stage 1 focuses on building the foundation of LocationOS around
-Nairobi apartments.
+Build a useful Nairobi apartment intelligence product and launch without waiting for every future intelligence model to become perfect.
 
-The objective is to move from fragmented property listings toward a
-structured system that understands:
+## Phase A — Data Foundation
 
-Listing
-→ Apartment
-→ Building
-→ Location
-→ Market
-→ Investment
+### Source listing collection — IMPLEMENTED
 
-Stage 1 should prioritize data quality, identity resolution,
-historical tracking, provenance, and confidence before advanced AI
-features.
+BuyRentKenya ingestion is working.
 
----
+### Extraction — IMPLEMENTED
 
-# PHASE A — DATA FOUNDATION
+JSON-LD extraction is working.
 
-## Step 1 — Source Listing Collection
+### Normalization — IMPLEMENTED
 
-Collect property listings from approved sources.
+Location, bedrooms, bathrooms, pricing, amenities, and property normalization are working.
 
-Current primary source:
+### Property storage — IMPLEMENTED
 
-BuyRentKenya.
+Supabase upsert/storage with source + listing_id identity is working.
 
-Current listing types:
+### Images — IMPLEMENTED
 
-- Sale
-- Rent
+Property image extraction/storage is working.
 
-The scraper should collect available listing information and images.
+## Phase B — Scrape History and Lifecycle
 
-Important source information includes:
+### Scrape runs — IMPLEMENTED
 
-- source
-- listing ID
-- URL
-- title
-- description
-- listing type
-- price
-- currency
-- bedrooms
-- bathrooms
+### Snapshots — IMPLEMENTED
+
+### Missing-listing detection — IMPLEMENTED
+
+### Failure/incomplete safety hardening — IMPLEMENTED IN CURRENT WORKING DESIGN
+
+Codex must inspect repository state before changing this logic.
+
+## Phase C — Price History
+
+### Price History V1 — IMPLEMENTED / TESTED
+
+Implemented:
+
+- property_price_history
+- property_price_history_view
+- repeated observations
+- previous/current comparison
+- absolute and percentage price change
+- direction
+
+Next improvements can wait until needed by the UI/analytics.
+
+## Phase D — Apartment Identity
+
+### Apartment Identity V1 — IMPLEMENTED / TESTED
+
+Implemented:
+
+- apartments
+- apartment_listings
+- PostgreSQL-generated apartment codes
+- existing relationship reuse
+- new identity creation
+- unmatched status for unverified physical matches
+
+### Advanced Apartment Matching — PLANNED
+
+Do not block launch on perfect fuzzy apartment matching.
+
+## Phase E — Building Intelligence
+
+### Canonical building table — CREATED
+
+Existing buildings table is reserved for enriched/canonical facts.
+
+### apartment_buildings — CREATED
+
+Relationship structure exists; no verified production matches at last checkpoint.
+
+### building_entities — IMMEDIATE NEXT MILESTONE
+
+Create a separate listing-derived building identity layer.
+
+Goal:
+
+Listings/apartments can cluster toward a physical building identity without inventing canonical facts such as GPS, developer, year built, floors, or unit count.
+
+### Building Matching V1 — NEXT
+
+Use multiple signals conservatively:
+
+- explicit names
+- road/address clues
 - location
-- agent information
-- listing dates
-- source images
-
-The source listing remains an observation.
-
----
-
-## Step 2 — Extraction
-
-Extract structured information from source pages.
-
-Current extraction includes structured data such as:
-
-- Product
-- Accommodation
-- RealEstateListing
-- RealEstateAgent
-
-The extractor should remain resilient to missing fields.
-
-Missing information should remain unknown rather than being fabricated.
-
----
-
-## Step 3 — Normalization
-
-Normalize source information into consistent LocationOS fields.
-
-Current normalization areas include:
-
-- location
-- bedrooms
-- bathrooms
-- pricing
-- amenities
-- property information
-
-Normalization should make data consistent without destroying useful
-source evidence.
-
----
-
-## Step 4 — Property Storage
-
-Store normalized source listings in Supabase.
-
-Current source identity:
-
-source + listing_id
-
-This identity must be protected by an appropriate uniqueness
-constraint.
-
-Property records should be updated rather than blindly duplicated
-when the same source listing is encountered again.
-
----
-
-## Step 5 — Property Images
-
-Store source property images.
-
-Images should be associated with the appropriate listing.
-
-The system should preserve:
-
-- listing ID
-- image URL
-- image order
-- source relationship
-
-Images are important future evidence for:
-
-- apartment matching
-- building matching
-- duplicate detection
-- visual analysis
-
----
-
-# PHASE B — SCRAPE HISTORY AND DATA LIFECYCLE
-
-## Step 6 — Scrape Run Tracking
-
-Each scraper execution should have a scrape-run record.
-
-A scrape run should track information such as:
-
-- run ID
-- source
-- status
-- start time
-- completion time
-- number of properties found
-
-The system should distinguish successful runs from incomplete or
-failed runs.
-
----
-
-## Step 7 — Scrape Snapshots
-
-Each completed scrape should record the listings observed during
-that run.
-
-The snapshot relationship is:
-
-Scrape Run
-→ Listings observed during that run
-
-This allows LocationOS to compare different observations over time.
-
-Current snapshot system has been tested with:
-
-999/999 listings successfully processed.
-
----
-
-## Step 8 — Missing Listing Detection
-
-After a sufficiently complete successful scrape, compare the current
-snapshot with previous observations.
-
-If a previously observed listing is absent from a later complete
-snapshot, it may be marked inactive.
-
-Important safety rule:
-
-Incomplete scrapes must not cause mass deactivation of existing
-properties.
-
-A listing should not be marked inactive merely because a scraper
-failed or processed an incomplete dataset.
-
----
-
-## Step 9 — Price History
-
-Track changes in asking prices over time.
-
-Example:
-
-January    12.0M
-March      11.7M
-May        11.2M
-August     10.8M
-
-Price history should allow LocationOS to understand:
-
-- price reductions
-- price increases
-- pricing duration
-- price movement
-- negotiation signals
-- historical asking behavior
-
-The historical record should not be replaced merely because the
-current price changed.
-
----
-
-# PHASE C — PROPERTY IDENTITY
-
-## Step 10 — Apartment Identification
-
-Introduce the distinction between:
-
-Listing
-
-and:
-
-Apartment.
-
-A listing represents a source observation.
-
-An apartment represents a physical residential unit.
-
-One apartment may eventually have multiple listings.
-
-Therefore:
-
-Listing ≠ Apartment
-
-Create stable internal Apartment IDs when sufficient evidence exists.
-
----
-
-## Step 11 — Apartment Matching Engine
-
-Attempt to determine whether different listings represent the same
-physical apartment.
-
-Potential evidence:
-
-- GPS or approximate location
-- building
-- apartment size
-- bedrooms
-- bathrooms
-- floor
-- unit number
-- price
 - descriptions
-- photographs
-- amenities
-- parking
-- furnished status
+- landmarks
+- agent/source patterns
+- amenities as supporting evidence
 
-The matching engine should produce evidence and confidence.
+Low confidence remains unresolved.
 
-Low confidence must not result in forced merging.
+### Canonical Building Enrichment — LATER / PRE-LAUNCH OR POST-LAUNCH
 
-Unknown is an acceptable and preferred outcome when evidence is weak.
+Scrape/collect actual building/development information from approved public sources.
 
----
+Then match:
 
-# PHASE D — BUILDING INTELLIGENCE
+building_entities
+→ canonical buildings
 
-## Step 12 — Building Identification
+## Phase F — Additional Sources
 
-Create internal building identifiers when the actual building name is
-unknown.
+### Property24 — PLANNED
 
-Examples:
+Build separately, integrate through shared LocationOS identity layers.
 
-BLD-00001
-BLD-00002
-BLD-00003
+### HassConsult — PLANNED
 
-The internal ID represents an entity identified by LocationOS.
+Build separately, integrate through shared LocationOS identity layers.
 
-It does not imply that the official building name is known.
+### Direct user listings — LAUNCH PRIORITY
 
----
+Create a path for agents/owners/users to submit listings directly so LocationOS becomes progressively less dependent on scraped portals.
 
-## Step 13 — Building Matching Engine
+## Phase G — Apartment / Building Information V1
 
-Attempt to associate apartments/listings with buildings.
+Before launch, implement enough consolidated information to support useful property pages.
 
-Example:
+Do not wait for complete data coverage.
 
-BLD-00017 → 91%
-BLD-00102 → 67%
-BLD-00054 → 31%
+## Phase H — Location Intelligence V1
 
-Potential evidence:
+Add useful building/location context:
 
-- GPS or approximate location
-- exterior photos
-- interior photos
-- building appearance
-- number of floors
-- amenities
-- pool
-- gym
-- parking
-- apartment size
-- floor
-- bedrooms
-- price
-- nearby landmarks
-- description similarity
-
-Critical rule:
-
-Low confidence = no forced match.
-
-A property may remain:
-
-Unknown building.
-
----
-
-## Step 14 — Building Information
-
-Once a building has sufficient identification confidence, create its
-profile.
-
-Potential information:
-
-- Building ID
-- Name
-- GPS
-- County
-- Area
-- Developer
-- Year built
-- Number of floors
-- Number of units
-- Amenities
-- Elevator
-- Generator
-- Borehole
-- Swimming pool
-- Gym
-- CCTV
-- Security
-- Fiber
-- Parking
-- Other facilities
-- Property manager
-- Management information
-
-The building becomes a central anchor connecting apartments.
-
----
-
-# PHASE E — APARTMENT INFORMATION
-
-## Step 15 — Apartment Information Layer
-
-Each apartment may eventually contain:
-
-- Apartment ID
-- Building ID
-- Floor
-- Unit number where known
-- Bedrooms
-- Bathrooms
-- Size
-- Balcony
-- Furnished
-- Parking
-- Condition where known
-- Year built
-- Photos
-- Current status
-
-The system must distinguish observed values from estimated or
-derived values.
-
----
-
-# PHASE F — LOCATION INTELLIGENCE
-
-## Step 16 — Location Intelligence
-
-Connect apartments/buildings to their surrounding environment.
-
-Potential relationships:
-
-- CBD
-- schools
-- hospitals
-- shopping centres
-- universities
-- office parks
-- industrial areas
-- bus stops
-- railway
-- highways
-- major landmarks
-
-Location intelligence should primarily attach to the
-building/location to avoid unnecessary duplication.
-
----
-
-# PHASE G — MARKET INTELLIGENCE
-
-## Step 17 — Market Intelligence
-
-Build neighborhood-level market intelligence.
-
-Potential indicators:
-
-- rental demand
-- vacancy
-- population growth
-- income indicators
-- apartment supply
-- new developments
-- infrastructure projects
-- traffic
-- crime indicators
-- price growth
-- rent growth
-
-The intended hierarchy is:
-
-Apartment
-→ Building
-→ Neighborhood
-→ Nairobi market
-
----
-
-# PHASE H — TRANSACTIONS
-
-## Step 18 — Transaction Data
-
-Eventually collect or integrate transaction evidence.
-
-Transaction information may include:
-
-- transaction date
-- transaction price
-- property
-- apartment
-- building
-- transaction type
-- source
-- confidence
-
-Transactions are important because asking prices are not the same as
-actual transaction prices.
-
-Transaction data should therefore be clearly distinguished from
-listing observations.
-
----
-
-# PHASE I — INVESTMENT INTELLIGENCE
-
-## Step 19 — Investment Calculations
-
-Calculate:
-
-### Gross rental yield
-
-Annual rent
-────────────── × 100
-Property value
-
-### Net yield
-
-Rent
-- vacancy
-- service charges
-- management
-- maintenance
-- other applicable costs
-────────────────────────────
-Investment value
-
-### Price per square metre
-
-Property price
-───────────────
-Apartment size
-
-### Rent per square metre
-
-Monthly rent
-────────────
-Apartment size
-
-Derived calculations must identify their underlying evidence.
-
----
-
-## Step 20 — Liquidity Score
-
-Estimate how easily an apartment can be resold.
-
-Potential inputs:
-
-- days on market
 - area
-- building
-- unit type
-- price bracket
-- historical transactions
+- major landmarks
+- key nearby facilities
+- basic distances where available
 
-Example:
+More sophisticated geospatial intelligence can follow.
 
-Liquidity: 84/100
+## Phase I — Basic Investment Metrics
 
-The system should explain the score.
+Launch-critical where inputs are available:
 
----
+- sale price per m²
+- rent per m²
+- gross rental yield
+- basic asking-price trend/history
 
-## Step 21 — Off-Plan Risk
+Do not fabricate metrics where size/rent/value inputs are missing.
 
-For off-plan properties/projects, evaluate:
+## Phase J — Basic Data Confidence
 
-- developer history
-- previous completion
-- delivery delays
-- project performance
-- historical reliability
+Provide a simple evidence-based confidence layer before making strong intelligence claims.
 
-Output:
+## Phase K — Product UI
 
-Low
-Medium
-High
+Launch-critical:
 
-The system should not produce strong risk conclusions when
-insufficient developer/project data exists.
+- search/filtering
+- listing/apartment results
+- apartment intelligence page
+- price history display
+- building/entity context where available
+- confidence/provenance cues
 
----
+## Phase L — Launch Infrastructure
 
-## Step 22 — Investment Score
+Before public launch:
 
-An initial framework:
+- production frontend
+- scraper scheduling/monitoring
+- error reporting
+- analytics
+- authentication/user flows where needed
+- secrets/security review
+- backups/recovery basics
+- direct listing submission workflow
 
-Yield — 40%
-Appreciation — 30%
-Vacancy risk — 20%
-Liquidity — 10%
+## Post-Launch / Non-Blocking Advanced Work
 
-This should eventually become dynamic according to investor
-objectives.
+Do not delay first launch for:
 
-Examples:
+- perfect apartment matching
+- perfect building matching
+- full AI normalization
+- full AI Data Steward
+- sophisticated fair-value model
+- liquidity score
+- off-plan risk engine
+- dynamic investor-specific scoring
+- complete transaction history
+- exhaustive Nairobi POI coverage
 
-Income investor:
-Prioritize yield.
+## Current Position
 
-Capital appreciation investor:
-Prioritize appreciation.
+Completed or substantially implemented:
 
-Conservative investor:
-Prioritize liquidity and risk.
-
-The objective is:
-
-Best apartment for this particular investor.
-
----
-
-# PHASE J — DATA CONFIDENCE
-
-## Step 23 — Data Confidence
-
-Every major intelligence output should eventually have a confidence
-measure.
-
-Example:
-
-Fair value:
-KES 11.4M
-
-Confidence:
-91%
-
-Evidence:
-
-- 14 comparable properties
-- 6 transaction records
-- strong building match
-- recent price information
-
-Another property may have:
-
-Fair value:
-KES 11.4M
-
-Confidence:
-43%
-
-Because:
-
-- only 2 comparable listings
-- no transaction data
-- weak building identification
-
-Confidence should reflect evidence quality.
-
----
-
-# PHASE K — AI DATA STEWARD
-
-## Step 24 — AI Data Steward
-
-Once sufficient data exists, continuously monitor:
-
-- duplicates
-- contradictions
-- suspicious prices
-- missing information
-- outdated records
-- bad building matches
-- unusual changes
-- normalization problems
-- data quality problems
-
-Low-risk formatting and normalization issues may eventually be
-automatically corrected.
-
-Important factual changes should require evidence and, when necessary,
-human review.
-
----
-
-# PHASE L — APARTMENT INTELLIGENCE
-
-## Step 25 — Apartment Intelligence Page
-
-The final Stage 1 objective is an apartment intelligence interface.
-
-Example:
-
-Apartment
-2BR — Kilimani
-
-Current asking:
-KES 11.2M
-
-Estimated fair value:
-KES 10.6–11.0M
-
-Gross yield:
-7.8%
-
-Estimated net yield:
-6.4%
-
-Liquidity:
-81/100
-
-Investment score:
-86/100
-
-Building:
-BLD-00127
-
-Developer:
-XYZ
-
-Data confidence:
-92%
-
-Airbnb potential:
-High
-
-Market trend:
-Positive
-
-RECOMMENDATION:
-Negotiate
-
-The system should explain the reasoning behind the assessment.
-
----
-
-# DATA TRUST MODEL
-
-Throughout Stage 1, LocationOS must preserve the distinction between:
-
-1. Observed fact
-2. Derived metric
-3. AI estimate
-4. Human verified information
-5. Unknown
-
-This distinction is mandatory for trustworthy real-estate intelligence.
-
----
-
-# DEVELOPMENT PRINCIPLE
-
-LocationOS does not need to perfectly collect every possible field
-before moving forward.
-
-The development process is:
-
-Collect
-→ Structure
-→ Enrich
-→ Verify
-→ Calculate
-→ Learn
-→ Update
-
-Each stage should strengthen the previous stages.
-
----
-
-# CURRENT POSITION
-
-LocationOS has completed substantial portions of the data foundation.
-
-Current verified capabilities include:
-
-- BuyRentKenya listing collection
-- extraction
-- normalization
-- Supabase storage
-- property upsert/update
-- duplicate protection
-- image extraction
-- image storage
-- last_seen_at tracking
-- scrape-run tracking
-- scrape snapshots
-- missing-listing detection
-
-A full test was successfully completed with:
-
-999/999 listings.
-
-The next major roadmap item after the current foundation is:
-
-Price History
-
-However, advanced roadmap work should only begin after the current
-foundation remains stable and documented.
-
----
-
-# FINAL STAGE 1 FLOW
-
-The intended Stage 1 progression is:
-
-Source Listings
+Listing collection
 → Extraction
 → Normalization
-→ Property Database
+→ Property storage
 → Images
-→ Scrape History
-→ Price History
-→ Apartment Identity
-→ Apartment Matching
-→ Building Identification
-→ Building Matching
-→ Building Information
-→ Apartment Information
-→ Location Intelligence
-→ Market Intelligence
-→ Transactions
-→ Investment Calculations
-→ Liquidity
-→ Off-Plan Risk
-→ Investment Score
-→ Data Confidence
-→ AI Data Steward
-→ Apartment Intelligence
+→ Scrape history
+→ Price History V1
+→ Apartment Identity V1
+
+Current next milestone:
+
+Building Entity Identity
+→ Building Matching V1
+→ Canonical Building Enrichment
+→ Location / Basic Metrics
+→ Product UI
+→ Launch
+
+Development principle:
+
+Move quickly, preserve data integrity, validate important identities, and improve models after real users begin generating feedback and better data.
