@@ -176,10 +176,27 @@ Proposed first-pass fields:
 - location TEXT nullable
 - standard_location TEXT nullable
 - address_text TEXT nullable
-- match_confidence DOUBLE PRECISION nullable
-- match_method TEXT nullable
+- canonical_building_id BIGINT nullable references buildings(id)
 - first_seen_at TIMESTAMPTZ
 - last_seen_at TIMESTAMPTZ
+- created_at TIMESTAMPTZ
+- updated_at TIMESTAMPTZ
+
+`building_entities` must not contain match status, confidence, method, or evidence. Those values describe an apartment's relationship to an inferred entity, not the entity itself.
+
+### apartment_building_entities — PLANNED / IMMEDIATE NEXT STEP
+
+Connects apartments to listing-derived building entities.
+
+Proposed first-pass fields:
+
+- id BIGINT identity primary key
+- apartment_id BIGINT references apartments(id)
+- building_entity_id BIGINT references building_entities(id)
+- match_status TEXT
+- match_confidence DOUBLE PRECISION nullable
+- match_method TEXT nullable
+- evidence JSONB nullable
 - created_at TIMESTAMPTZ
 - updated_at TIMESTAMPTZ
 
@@ -204,17 +221,15 @@ apartment_listings
         ↓
 apartments
         ↓
-listing-derived building identity / matching
+apartment_building_entities
         ↓
 building_entities
         ↓
-verification / public enrichment
+canonical_building_id
         ↓
 buildings
 
-The exact foreign-key/mapping design between apartments, building_entities, and canonical buildings still requires an explicit migration decision.
-
-Do not silently overload apartment_buildings for a different concept.
+`apartment_buildings` remains the separate relationship for apartments and canonical `buildings`; do not silently overload it for provisional entities.
 
 ## 9. Building Evidence
 

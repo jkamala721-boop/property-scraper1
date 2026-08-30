@@ -247,7 +247,7 @@ At the last verified checkpoint:
 
 building_count = 0
 
-## 12. Apartment-to-Building Relationship — CREATED, NOT POPULATED
+## 12. Apartment-to-Canonical-Building Relationship — CREATED, NOT POPULATED
 
 Current table:
 
@@ -266,7 +266,7 @@ At the last verified checkpoint:
 
 0 relationship rows
 
-The relationship exists structurally but no production building matches were created.
+The relationship exists structurally but no production canonical-building matches were created. It must not be repurposed for provisional listing-derived building entities.
 
 ## 13. Listing-Derived Building Entity Layer — NEXT / IN PROGRESS
 
@@ -289,14 +289,29 @@ Discussed candidate fields:
 - location
 - standard_location
 - address_text
-- match_confidence
-- match_method
+- canonical_building_id NULL → buildings(id)
 - first_seen_at
 - last_seen_at
 - created_at
 - updated_at
 
 This table was the immediate next implementation step. Do not assume it exists until Supabase is inspected.
+
+Planned relationship table:
+
+apartment_building_entities
+
+- id
+- apartment_id
+- building_entity_id
+- match_status
+- match_confidence
+- match_method
+- evidence JSONB
+- created_at
+- updated_at
+
+Match status, confidence, method, and evidence belong to this apartment-to-entity relationship, not to `building_entities`.
 
 ## 14. Building Matching Findings So Far
 
@@ -344,9 +359,12 @@ That canonical data should then be matched against listing-derived building_enti
 
 Conceptual flow:
 
-Listings
+properties
+→ apartment_listings
+→ apartments
+→ apartment_building_entities
 → building_entities
-→ matching / verification
+→ canonical_building_id
 → buildings
 
 ## 16. Additional Source Strategy — PLANNED

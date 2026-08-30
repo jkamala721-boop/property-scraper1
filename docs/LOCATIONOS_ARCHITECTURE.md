@@ -111,7 +111,22 @@ It may exist before LocationOS knows:
 
 It should be created conservatively from multiple pieces of listing evidence.
 
-### 7.2 Canonical Building
+Its fields are limited to identity and observed/derived building descriptors:
+
+- id, building_code, canonical_name, normalized_name
+- location, standard_location, address_text
+- canonical_building_id (nullable foreign key to `buildings(id)`)
+- first_seen_at, last_seen_at, created_at, updated_at
+
+Match status, confidence, method, and evidence do not belong on the entity.
+
+### 7.2 Apartment-to-Entity Relationship
+
+`apartment_building_entities` connects an apartment to a listing-derived entity.
+It owns `match_status`, `match_confidence`, `match_method`, and `evidence JSONB`,
+plus its identity and timestamps.
+
+### 7.3 Canonical Building
 
 The existing buildings table represents stronger/enriched building information.
 
@@ -128,6 +143,18 @@ Potential information includes:
 - management information
 
 Canonical building information can later be scraped/enriched from approved public sources and matched back to building_entities.
+
+`apartment_buildings` remains separate for future apartment-to-canonical-building relationships; it is not the provisional entity relationship.
+
+Conceptual chain:
+
+properties
+→ apartment_listings
+→ apartments
+→ apartment_building_entities
+→ building_entities
+→ canonical_building_id
+→ buildings
 
 ## 8. Building Matching
 

@@ -135,14 +135,29 @@ Candidate fields discussed:
 - location
 - standard_location
 - address_text
-- match_confidence
-- match_method
+- canonical_building_id
 - first_seen_at
 - last_seen_at
 - created_at
 - updated_at
 
 Do not assume this table exists until the production schema is inspected.
+
+`canonical_building_id` is nullable and references `buildings(id)` when a
+listing-derived entity has been verified against canonical building information.
+
+The separate `apartment_building_entities` relationship records the apartment
+match and its evidence:
+
+- id
+- apartment_id
+- building_entity_id
+- match_status
+- match_confidence
+- match_method
+- evidence JSONB
+- created_at
+- updated_at
 
 ### B. Canonical / enriched building information
 
@@ -166,7 +181,7 @@ Its known schema includes fields such as:
 
 Do not populate canonical building facts from weak listing inference merely to avoid NULLs.
 
-The existing apartment_buildings table is intended to connect apartments to buildings while preserving:
+The existing apartment_buildings table is reserved for later apartment-to-canonical-building relationships while preserving:
 
 - match_status
 - match_confidence

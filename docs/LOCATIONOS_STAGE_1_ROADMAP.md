@@ -78,7 +78,7 @@ Existing buildings table is reserved for enriched/canonical facts.
 
 ### apartment_buildings — CREATED
 
-Relationship structure exists; no verified production matches at last checkpoint.
+Relationship structure exists for later apartment-to-canonical-building matches; no verified production matches at last checkpoint.
 
 ### building_entities — IMMEDIATE NEXT MILESTONE
 
@@ -87,6 +87,8 @@ Create a separate listing-derived building identity layer.
 Goal:
 
 Listings/apartments can cluster toward a physical building identity without inventing canonical facts such as GPS, developer, year built, floors, or unit count.
+
+The entity has a nullable `canonical_building_id` to `buildings(id)`. Add the separate `apartment_building_entities` relationship for apartment-to-entity matching; it owns match status, confidence, method, and evidence. Do not put those fields on `building_entities` or repurpose `apartment_buildings`.
 
 ### Building Matching V1 — NEXT
 
