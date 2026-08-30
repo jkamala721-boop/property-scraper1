@@ -17,6 +17,7 @@ from database import (
 from logger import log
 from normalize import normalize
 from extractor import extract_property
+from post_scrape_building_identity import run_post_scrape_building_identity
 
 import requests
 
@@ -189,9 +190,13 @@ def main():
         f"{properties_found}/{len(records)} properties processed."
     )
 
-    finish_scrape_run(
+    scrape_result = finish_scrape_run(
         properties_found,
         len(records)
+    )
+
+    run_post_scrape_building_identity(
+        scrape_result
     )
 
 

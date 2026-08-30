@@ -186,7 +186,8 @@ Building Matching V1 is implemented as an isolated deterministic workflow. It
 requires an explicit, bounded listing sample, compares each listing against
 existing building entities and sufficiently strong reference relationships,
 and emits explainable candidate or abstention results. It provides an explicit
-dry-run mode and is not connected to the scraper.
+dry-run mode and never runs inside per-listing scraping; automatic execution is
+only through the post-success orchestration layer.
 
 An explicit write mode can insert only unambiguous `strong_candidate` results
 at confidence 0.85 or higher. These rows always use `match_status = candidate`
@@ -228,10 +229,13 @@ automated relationships cannot seed Building Matching V1 reference evidence.
 
 ### 8.2 Operational Building Identity Pipeline
 
-Building Identity Pipeline V1 is a separate explicit command that composes the
-approved systems without changing their scores or thresholds. It keyset-pages
-source listing mappings by `listing_id` in batches of at most 100 and keeps the
-existing 50-record matcher/discovery evaluation bounds internally.
+Building Identity Pipeline V1 composes the approved systems without changing
+their scores or thresholds. It remains available as a separate explicit
+command and is also the post-scrape identity stage for BuyRentKenya. Standalone
+operation keyset-pages source listing mappings; post-scrape operation
+keyset-pages only the completed run's persisted `scrape_run_properties`
+snapshot. Both use batches of at most 100 and keep the existing 50-record
+matcher/discovery evaluation bounds internally.
 
 Each unlinked apartment is evaluated against existing eligible entities first.
 Only a strong unambiguous match uses the existing matching candidate-write
@@ -239,7 +243,15 @@ path. A plain no-match may fall through to discovery. Review, ambiguity, and
 conflicting evidence abstain instead of creating a new entity. Discovery uses
 its existing write path and rejects multiple creation candidates supported by
 the same apartment as operationally ambiguous. The pipeline never writes
-canonical building tables and is not called by `scraper.py`.
+canonical building tables.
+
+`scraper.py` invokes the post-scrape hook only when `finish_scrape_run()`
+returns `completed`, which occurs after processed-count, persisted-snapshot,
+corpus-completeness, completion, and missing-listing handling succeed. The
+pipeline independently re-reads the run status before processing. Failed or
+incomplete scrapes never invoke identity writes. Identity errors are captured
+and reported without changing the completed scrape or inactivity outcome, and
+the completed-run command can be retried independently.
 
 ## 9. Normalization and AI Enrichment
 

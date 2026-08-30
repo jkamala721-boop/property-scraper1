@@ -7,7 +7,9 @@ from building_identity_pipeline import (
     BatchItem,
     BatchPage,
     fetch_batch_page,
+    fetch_scrape_run_page,
     process_batch_page,
+    run_pipeline_for_scrape_run,
     validate_batch_size,
 )
 from building_matching import MatchDecision, Signal
@@ -113,6 +115,99 @@ class FakePageClient:
     def table(self, table_name):
         self.tables.append(table_name)
         return FakePageQuery(self, table_name)
+
+
+class FakeSnapshotQuery:
+    def __init__(self, client, table_name):
+        self.client = client
+        self.table_name = table_name
+        self.filters = {}
+        self.cursor = None
+        self.row_limit = None
+        self.in_values = None
+
+    def select(self, *_args):
+        return self
+
+    def eq(self, column, value):
+        self.filters[column] = value
+        return self
+
+    def gt(self, _column, value):
+        self.cursor = int(value)
+        return self
+
+    def order(self, *_args):
+        return self
+
+    def limit(self, value):
+        self.row_limit = value
+        return self
+
+    def in_(self, _column, values):
+        self.in_values = {int(value) for value in values}
+        return self
+
+    def execute(self):
+        if self.table_name == "scrape_runs":
+            if self.client.run_status is None:
+                return SimpleNamespace(data=[])
+            return SimpleNamespace(
+                data=[
+                    {
+                        "id": self.filters["id"],
+                        "source": self.filters["source"],
+                        "status": self.client.run_status,
+                    }
+                ]
+            )
+        if self.table_name == "scrape_run_properties":
+            rows = [
+                row
+                for row in self.client.snapshot_rows
+                if row["run_id"] == self.filters["run_id"]
+                and row["source"] == self.filters["source"]
+                and (self.cursor is None or row["listing_id"] > self.cursor)
+            ]
+            rows.sort(key=lambda row: row["listing_id"])
+            return SimpleNamespace(data=rows[: self.row_limit])
+        if self.table_name == "apartment_listings":
+            return SimpleNamespace(
+                data=[
+                    row
+                    for row in self.client.mapping_rows
+                    if row["source"] == self.filters["source"]
+                    and row["listing_id"] in self.in_values
+                ]
+            )
+        if self.table_name == "apartment_building_entities":
+            return SimpleNamespace(
+                data=[
+                    {"apartment_id": apartment_id}
+                    for apartment_id in sorted(self.client.linked_apartments)
+                    if apartment_id in self.in_values
+                ]
+            )
+        raise AssertionError(f"Unexpected table {self.table_name}")
+
+
+class FakeSnapshotClient:
+    def __init__(
+        self,
+        snapshot_rows=(),
+        mapping_rows=(),
+        linked_apartments=(),
+        run_status="completed",
+    ):
+        self.snapshot_rows = list(snapshot_rows)
+        self.mapping_rows = list(mapping_rows)
+        self.linked_apartments = set(linked_apartments)
+        self.run_status = run_status
+        self.tables = []
+
+    def table(self, table_name):
+        self.tables.append(table_name)
+        return FakeSnapshotQuery(self, table_name)
 
 
 class BuildingIdentityPipelineTests(unittest.TestCase):
@@ -253,6 +348,55 @@ class BuildingIdentityPipelineTests(unittest.TestCase):
         self.assertEqual([item.listing_id for item in second.items], [1003, 1004])
         self.assertEqual(second.next_cursor, 1004)
         self.assertTrue(second.items[-1].already_linked)
+
+    def test_completed_scrape_page_uses_only_snapshot_listing_ids(self):
+        snapshot_rows = [
+            {"run_id": 42, "source": "BuyRentKenya", "listing_id": value}
+            for value in (2002, 2004, 2008)
+        ]
+        mapping_rows = [
+            {
+                "apartment_id": index,
+                "source": "BuyRentKenya",
+                "listing_id": listing_id,
+            }
+            for index, listing_id in enumerate((1999, 2002, 2004, 2008), 1)
+        ]
+        client = FakeSnapshotClient(
+            snapshot_rows,
+            mapping_rows,
+            linked_apartments={3},
+        )
+
+        first = fetch_scrape_run_page(client, 42, "BuyRentKenya", 2)
+        second = fetch_scrape_run_page(
+            client,
+            42,
+            "BuyRentKenya",
+            2,
+            after_listing_id=first.next_cursor,
+        )
+
+        self.assertEqual([item.listing_id for item in first.items], [2002, 2004])
+        self.assertEqual([item.listing_id for item in second.items], [2008])
+        self.assertNotIn(1999, [item.listing_id for item in first.items])
+        self.assertTrue(first.items[-1].already_linked)
+        self.assertTrue(first.has_more)
+        self.assertFalse(second.has_more)
+
+    def test_live_incomplete_run_is_rejected_before_snapshot_read(self):
+        client = FakeSnapshotClient(run_status="incomplete")
+
+        report = run_pipeline_for_scrape_run(
+            client,
+            42,
+            "BuyRentKenya",
+            100,
+            write=True,
+        )
+
+        self.assertTrue(report["skipped"])
+        self.assertEqual(client.tables, ["scrape_runs"])
 
     def test_write_delegates_to_existing_paths_and_is_idempotent_on_next_run(self):
         writes = []

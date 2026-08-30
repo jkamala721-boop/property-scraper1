@@ -234,6 +234,14 @@ the discovery normalized/similar-entity recheck remain the database-facing
 idempotency protections. The pipeline never writes `buildings` or
 `apartment_buildings`.
 
+The post-scrape path also adds no schema. It first confirms the referenced
+`scrape_runs` row still has `status = completed`, then keyset-pages only the
+corresponding `scrape_run_properties` listing IDs and resolves their existing
+`apartment_listings` mappings. A missing apartment mapping is reported as an
+identity-stage error rather than silently broadening the query. Identity-stage
+failure does not update `scrape_runs`, property live state, or scrape
+completeness.
+
 ## 8. Recommended Relationship Model
 
 Conceptual target:

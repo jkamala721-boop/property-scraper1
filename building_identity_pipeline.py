@@ -43,6 +43,7 @@ class BatchPage:
     requested_cursor: int | None
     next_cursor: int | None
     has_more: bool
+    unmapped_listing_ids: tuple[int, ...] = ()
 
 
 def _response_data(response: Any) -> list[dict[str, Any]]:
@@ -101,6 +102,84 @@ def fetch_batch_page(
         requested_cursor=after_listing_id,
         next_cursor=items[-1].listing_id if items else after_listing_id,
         has_more=len(rows) > batch_size,
+    )
+
+
+def fetch_scrape_run_page(
+    client: Any,
+    run_id: int,
+    source: str,
+    batch_size: int,
+    after_listing_id: int | None = None,
+) -> BatchPage:
+    """Fetch one bounded page from a completed scrape snapshot."""
+
+    validate_batch_size(batch_size)
+    query = (
+        client.table("scrape_run_properties")
+        .select("listing_id")
+        .eq("run_id", int(run_id))
+        .eq("source", source)
+    )
+    if after_listing_id is not None:
+        query = query.gt("listing_id", int(after_listing_id))
+    snapshot_rows = _response_data(
+        query.order("listing_id").limit(batch_size + 1).execute()
+    )
+    page_rows = snapshot_rows[:batch_size]
+    listing_ids = [int(row["listing_id"]) for row in page_rows]
+
+    mapping_rows: list[dict[str, Any]] = []
+    if listing_ids:
+        mapping_rows = _response_data(
+            client.table("apartment_listings")
+            .select("apartment_id,source,listing_id")
+            .eq("source", source)
+            .in_("listing_id", listing_ids)
+            .execute()
+        )
+    mappings_by_listing = {
+        int(row["listing_id"]): row for row in mapping_rows
+    }
+    unmapped_listing_ids = tuple(
+        listing_id
+        for listing_id in listing_ids
+        if listing_id not in mappings_by_listing
+    )
+    apartment_ids = sorted(
+        {int(row["apartment_id"]) for row in mapping_rows}
+    )
+    linked_apartments: set[int] = set()
+    if apartment_ids:
+        relationship_rows = _response_data(
+            client.table("apartment_building_entities")
+            .select("apartment_id")
+            .in_("apartment_id", apartment_ids)
+            .execute()
+        )
+        linked_apartments = {
+            int(row["apartment_id"]) for row in relationship_rows
+        }
+
+    items = tuple(
+        BatchItem(
+            apartment_id=int(mappings_by_listing[listing_id]["apartment_id"]),
+            source=source,
+            listing_id=listing_id,
+            already_linked=(
+                int(mappings_by_listing[listing_id]["apartment_id"])
+                in linked_apartments
+            ),
+        )
+        for listing_id in listing_ids
+        if listing_id in mappings_by_listing
+    )
+    return BatchPage(
+        items=items,
+        requested_cursor=after_listing_id,
+        next_cursor=listing_ids[-1] if listing_ids else after_listing_id,
+        has_more=len(snapshot_rows) > batch_size,
+        unmapped_listing_ids=unmapped_listing_ids,
     )
 
 
@@ -190,6 +269,14 @@ def process_batch_page(
     abstention_apartments: set[int] = set()
     conflict_apartments: set[int] = set()
     errors: list[dict[str, Any]] = []
+    if page.unmapped_listing_ids:
+        errors.append(
+            {
+                "stage": "snapshot_apartment_mapping",
+                "listing_ids": list(page.unmapped_listing_ids),
+                "error": "completed scrape listing has no apartment_listings mapping",
+            }
+        )
     matching_relationships_proposed = 0
     matching_relationships_created = 0
     discovery_relationships_proposed = 0
@@ -338,7 +425,7 @@ def process_batch_page(
                 )
 
     summary = {
-        "listings_examined": len(page.items),
+        "listings_examined": len(page.items) + len(page.unmapped_listing_ids),
         "already_linked_skipped": len(linked_apartments),
         "duplicate_apartment_listings_skipped": duplicate_apartment_listings,
         "strong_existing_entity_matches": matching_relationships_proposed,
@@ -393,6 +480,134 @@ def run_pipeline_batch(
     return report
 
 
+SUMMARY_FIELDS = (
+    "listings_examined",
+    "already_linked_skipped",
+    "duplicate_apartment_listings_skipped",
+    "strong_existing_entity_matches",
+    "new_provisional_entities_proposed",
+    "new_provisional_entities_created",
+    "discovery_relationships_proposed",
+    "discovery_relationships_created",
+    "matching_relationships_proposed",
+    "matching_relationships_created",
+    "review_cases",
+    "abstentions",
+    "conflicts",
+    "errors",
+)
+
+
+def _empty_summary() -> dict[str, int]:
+    return {field: 0 for field in SUMMARY_FIELDS}
+
+
+def _skipped_scrape_run_report(
+    run_id: int,
+    source: str,
+    status: str,
+    write: bool,
+) -> dict[str, Any]:
+    return {
+        "mode": "write" if write else "dry_run",
+        "source": source,
+        "scrape_run_id": int(run_id),
+        "scrape_run_status": status,
+        "skipped": True,
+        "skip_reason": f"scrape run status is {status}, not completed",
+        "writes_performed": False,
+        "batches_processed": 0,
+        "summary": _empty_summary(),
+        "newly_created_entities": [],
+        "matching_relationship_ids": [],
+        "discovery_relationship_ids": [],
+        "errors": [],
+    }
+
+
+def run_pipeline_for_scrape_run(
+    client: Any,
+    run_id: int,
+    source: str,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    *,
+    write: bool,
+) -> dict[str, Any]:
+    """Process only listings persisted in one successfully completed scrape."""
+
+    validate_batch_size(batch_size)
+    run_rows = _response_data(
+        client.table("scrape_runs")
+        .select("id,source,status")
+        .eq("id", int(run_id))
+        .eq("source", source)
+        .limit(1)
+        .execute()
+    )
+    if not run_rows:
+        raise RuntimeError(
+            f"Scrape run {run_id} for source {source} was not found."
+        )
+    run_status = str(run_rows[0].get("status") or "unknown")
+    if run_status != "completed":
+        return _skipped_scrape_run_report(
+            run_id, source, run_status, write
+        )
+
+    summary = _empty_summary()
+    reports: list[dict[str, Any]] = []
+    next_cursor: int | None = None
+    while True:
+        page = fetch_scrape_run_page(
+            client,
+            run_id,
+            source,
+            batch_size,
+            after_listing_id=next_cursor,
+        )
+        report = process_batch_page(client, page, write=write)
+        reports.append(report)
+        for field in SUMMARY_FIELDS:
+            summary[field] += int(report["summary"][field])
+        if not page.has_more:
+            break
+        if page.next_cursor is None or page.next_cursor == next_cursor:
+            raise RuntimeError(
+                f"Scrape run {run_id} snapshot pagination did not advance."
+            )
+        next_cursor = page.next_cursor
+
+    return {
+        "mode": "write" if write else "dry_run",
+        "source": source,
+        "scrape_run_id": int(run_id),
+        "scrape_run_status": run_status,
+        "skipped": False,
+        "writes_performed": any(report["writes_performed"] for report in reports),
+        "batch_size": batch_size,
+        "batches_processed": len(reports),
+        "summary": summary,
+        "newly_created_entities": [
+            entity
+            for report in reports
+            for entity in report["newly_created_entities"]
+        ],
+        "matching_relationship_ids": [
+            relationship_id
+            for report in reports
+            for relationship_id in report["matching_relationship_ids"]
+        ],
+        "discovery_relationship_ids": [
+            relationship_id
+            for report in reports
+            for relationship_id in report["discovery_relationship_ids"]
+        ],
+        "errors": [
+            error for report in reports for error in report["errors"]
+        ],
+    }
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Bounded operational LocationOS building identity pipeline"
@@ -407,16 +622,35 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=int,
         help="Exclusive listing-id cursor returned by the previous batch",
     )
+    parser.add_argument(
+        "--scrape-run-id",
+        type=int,
+        help="Process the completed scrape snapshot, for isolated retry",
+    )
     args = parser.parse_args(argv)
     validate_batch_size(args.batch_size)
 
-    report = run_pipeline_batch(
-        create_supabase_client(),
-        args.source,
-        args.batch_size,
-        args.after_listing_id,
-        write=args.write,
-    )
+    client = create_supabase_client()
+    if args.scrape_run_id is not None:
+        if args.after_listing_id is not None:
+            parser.error(
+                "--after-listing-id cannot be used with --scrape-run-id"
+            )
+        report = run_pipeline_for_scrape_run(
+            client,
+            args.scrape_run_id,
+            args.source,
+            args.batch_size,
+            write=args.write,
+        )
+    else:
+        report = run_pipeline_batch(
+            client,
+            args.source,
+            args.batch_size,
+            args.after_listing_id,
+            write=args.write,
+        )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 1 if report["summary"]["errors"] else 0
 

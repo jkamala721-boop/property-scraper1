@@ -110,7 +110,8 @@ Low confidence remains unresolved.
 
 The V1 implementation uses an explicitly bounded sample and produces
 explainable candidate or abstention reports. It has explicit dry-run and write
-modes and is not connected to the scraper. Write mode inserts only unambiguous
+modes and never runs inside per-listing scraping. Automatic execution occurs
+only through the post-success orchestration layer. Write mode inserts only unambiguous
 strong candidates at confidence 0.85 or higher, never updates an existing
 relationship, and never writes canonical-building data.
 
@@ -135,14 +136,19 @@ The first controlled production write created `BENT-000003` / `Capital Garden`
 and candidate relationships for apartments `8`, `1063`, and `1026`. Canonical
 building tables were not changed.
 
-### Operational Building Identity Pipeline V1 — IMPLEMENTED
+### Operational Building Identity Pipeline V1 — IMPLEMENTED / POST-SCRAPE AUTOMATED
 
 Matching and discovery are composed by an explicit bounded command. It skips
 already-linked apartments, attempts matching first, uses discovery only after a
 plain no-match, and abstains on review, ambiguity, or conflict. Batches are
 keyset-paginated at a maximum of 100 while existing V1 evaluation limits remain
-50 internally. The pipeline is not integrated into the scraper and does not
-touch canonical building tables.
+50 internally. The normal BuyRentKenya workflow now invokes it only after a
+scrape has safely completed and passed processed-count, persisted-snapshot, and
+corpus-completeness checks. The automatic path processes only that completed
+run's snapshot, skips failed/incomplete runs, and re-checks live run status.
+Building-identity failure is isolated from scrape completion and
+inactive-listing handling. The pipeline does not touch canonical building
+tables.
 
 The first 100-listing production batch completed with no errors and no writes:
 zero strong matches or discovery creation proposals, five review cases, and 96
@@ -257,8 +263,7 @@ Listing collection
 
 Current next milestone:
 
-Validate Building Entity Discovery V1 writes on small reviewed samples
-→ keep automatic discovery explicitly bounded before any wider run
+Monitor bounded post-scrape Building Identity V1 operation
 → Canonical Building Enrichment
 → Location / Basic Metrics
 → Product UI

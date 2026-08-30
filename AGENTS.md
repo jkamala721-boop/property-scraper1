@@ -62,6 +62,7 @@ The project has working functionality for:
 - deterministic Building Matching V1 dry-run and explicit candidate-write workflow
 - deterministic Building Entity Discovery V1 dry-run and explicit candidate-write workflow
 - bounded operational Building Identity Pipeline V1 orchestration
+- failure-isolated Building Identity Pipeline execution after safe completed scrapes
 
 Known historical scraper checkpoint:
 
@@ -165,9 +166,9 @@ match and its evidence:
 - created_at
 - updated_at
 
-Building Matching V1 is isolated from the scraper. It reads an explicit,
-bounded listing sample and existing entity/reference evidence and provides an
-explicit dry-run mode. Its explicit write mode inserts only unambiguous
+Building Matching V1 remains isolated from per-listing scraping. It reads an
+explicit, bounded listing sample and existing entity/reference evidence and
+provides an explicit dry-run mode. Its explicit write mode inserts only unambiguous
 `strong_candidate` relationships at confidence 0.85 or higher, always as
 `candidate` with method `deterministic_v1_auto`. It never creates or changes
 building entities or canonical-building records.
@@ -193,7 +194,12 @@ safe fallback. It processes an explicit keyset-paginated batch of at most 100
 source listing mappings, skips apartments that already have any entity
 relationship, and retains the matcher/discovery 50-record internal evaluation
 bounds. Ambiguous or conflicting matches never fall through to entity creation.
-It is an explicit command and is not integrated into the scraper.
+It remains available as an explicit command and is also invoked after
+`finish_scrape_run()` returns a completed run. The automatic path keyset-pages
+only that run's persisted `scrape_run_properties` snapshot. Incomplete and
+failed runs are skipped, and the live run status is re-checked before writes.
+Building-identity errors are reported but do not change an already successful
+property scrape, its completeness decision, or inactive-listing handling.
 
 ### B. Canonical / enriched building information
 

@@ -443,7 +443,9 @@ def finish_scrape_run(
 
     if current_run_id is None:
 
-        return
+        return None
+
+    finishing_run_id = current_run_id
     
     if properties_found != expected_properties:
 
@@ -471,7 +473,11 @@ def finish_scrape_run(
         current_run_id = None
         current_run_started_at = None
 
-        return
+        return {
+            "run_id": finishing_run_id,
+            "source": "BuyRentKenya",
+            "status": "incomplete"
+        }
 
     snapshot_result = (
         supabase
@@ -516,7 +522,11 @@ def finish_scrape_run(
         current_run_id = None
         current_run_started_at = None
 
-        return
+        return {
+            "run_id": finishing_run_id,
+            "source": "BuyRentKenya",
+            "status": "incomplete"
+        }
 
     if not has_sufficient_discovery_baseline(expected_properties):
 
@@ -544,7 +554,11 @@ def finish_scrape_run(
         current_run_id = None
         current_run_started_at = None
 
-        return
+        return {
+            "run_id": finishing_run_id,
+            "source": "BuyRentKenya",
+            "status": "incomplete"
+        }
 
     completed_run_id = current_run_id
 
@@ -633,6 +647,12 @@ def finish_scrape_run(
 
     current_run_id = None
     current_run_started_at = None
+
+    return {
+        "run_id": completed_run_id,
+        "source": "BuyRentKenya",
+        "status": "completed"
+    }
 
 # -----------------------------
 # FAIL SCRAPE RUN

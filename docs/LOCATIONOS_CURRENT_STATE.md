@@ -363,7 +363,8 @@ Individually supported apartments are linked as `candidate` with method
 `entity_discovery_v1_auto`, using structured JSONB evidence and the existing
 unique apartment/entity constraint for idempotency. Automated discovery
 relationships cannot seed Building Matching V1 reference evidence. Discovery
-is not connected to the scraper.
+does not run inside per-listing scraping; automatic execution occurs only
+through the post-success Building Identity Pipeline.
 
 First controlled production checkpoint:
 
@@ -378,11 +379,10 @@ First controlled production checkpoint:
 
 ### 15.1 Operational Building Identity Pipeline V1
 
-The explicit `building_identity_pipeline.py` command processes one bounded,
-keyset-paginated source batch at a time. Maximum batch size is 100; internal
-matcher and discovery calls remain capped at 50. The returned exclusive
-`after_listing_id` cursor advances subsequent batches without rereading the
-first page.
+The `building_identity_pipeline.py` command processes bounded, keyset-paginated
+source batches. Maximum batch size is 100; internal matcher and discovery calls
+remain capped at 50. The returned exclusive `after_listing_id` cursor advances
+standalone batches without rereading the first page.
 
 The order is existing-relationship skip → deterministic matching → safe
 discovery fallback → abstention. Review, ambiguous, and conflicting matching
@@ -390,7 +390,21 @@ results do not enter discovery. Writes delegate only to the existing matching
 and discovery write paths, so relationships remain candidates and automated
 evidence cannot seed future matcher references. The command reports proposed
 and created entities/relationships, review cases, abstentions, conflicts,
-errors, and the next cursor. It is not connected to the scraper.
+errors, and the next cursor.
+
+The normal BuyRentKenya scraper now calls a failure-isolated post-scrape hook
+only after `finish_scrape_run()` returns a completed result. That result is
+returned only after processed-count equality, snapshot-count verification,
+the corpus-completeness guard, completion persistence, and missing-listing
+handling succeed. Incomplete and failed results are skipped. The post-scrape
+pipeline re-verifies live run status and evaluates only listing IDs in that
+run's `scrape_run_properties` snapshot, in bounded pages. Building-identity
+errors are printed for independent retry and cannot change scrape status,
+completeness, or inactive-listing decisions.
+
+An isolated retry is available with:
+
+`python building_identity_pipeline.py --source BuyRentKenya --scrape-run-id <id> --batch-size 100 --write`
 
 Python dependencies are pinned in `requirements.txt` with a complete
 `requirements.lock`. Operational commands accept `SUPABASE_URL` and
