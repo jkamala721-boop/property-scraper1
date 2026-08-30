@@ -4,6 +4,7 @@ from supabase import create_client
 
 from config import SUPABASE_URL, SUPABASE_KEY
 from logger import log
+from scrape_safety import has_sufficient_discovery_coverage
 
 
 supabase = create_client(
@@ -387,6 +388,48 @@ def mark_missing_properties_inactive(
 
 
 # -----------------------------
+# DISCOVERY COVERAGE
+# -----------------------------
+
+def has_sufficient_discovery_baseline(discovered_properties):
+
+    previous_result = (
+        supabase
+        .table("scrape_runs")
+        .select("properties_found")
+        .eq(
+            "source",
+            "BuyRentKenya"
+        )
+        .eq(
+            "status",
+            "completed"
+        )
+        .order(
+            "id",
+            desc=True
+        )
+        .limit(1)
+        .execute()
+    )
+
+    previous_completed_properties = None
+
+    if previous_result.data:
+        previous_completed_properties = (
+            previous_result.data[0].get("properties_found")
+        )
+
+        if previous_completed_properties is None:
+            return False
+
+    return has_sufficient_discovery_coverage(
+        discovered_properties,
+        previous_completed_properties
+    )
+
+
+# -----------------------------
 # FINISH SCRAPE RUN
 # -----------------------------
 
@@ -453,6 +496,34 @@ def finish_scrape_run(
             f"Snapshot incomplete: "
             f"{snapshot_count}/"
             f"{expected_properties} properties persisted."
+        )
+
+        (
+            supabase
+            .table("scrape_runs")
+            .update({
+                "finished_at": "now()",
+                "status": "incomplete",
+                "properties_found": properties_found
+            })
+            .eq(
+                "id",
+                current_run_id
+            )
+            .execute()
+        )
+
+        current_run_id = None
+        current_run_started_at = None
+
+        return
+
+    if not has_sufficient_discovery_baseline(expected_properties):
+
+        print(
+            "Discovery corpus is insufficient compared to "
+            "the previous completed scrape. Marking this run "
+            "incomplete; no properties will be marked inactive."
         )
 
         (
