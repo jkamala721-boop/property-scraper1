@@ -1,205 +1,124 @@
-# LocationOS Current State
+# LocationOS Current State — 2026-08-30
 
 ## Purpose
 
-This document describes the actual implementation state of LocationOS
-at the current development checkpoint.
+This document is the current development checkpoint for LocationOS. It supersedes older current-state statements that described price history, apartment identity, and building schema as purely planned.
 
-It must be treated as a snapshot of what is implemented and verified,
-not as a description of future functionality.
+The repository and production Supabase schema remain authoritative. Codex must inspect them before making changes.
 
-Status labels:
+## 1. Product Scope
 
-- IMPLEMENTED — working and verified
-- TESTED — specifically tested successfully
-- IN PROGRESS — currently being developed
-- PLANNED — not yet implemented
-- UNKNOWN — implementation state has not been verified
+Current focus:
 
----
+Stage 1 — Nairobi apartments.
 
-# 1. Current Product Scope
-
-LocationOS is currently focused on:
-
-Nairobi apartment real-estate data.
-
-Current primary source:
+Current main ingestion source:
 
 BuyRentKenya.
 
-Current listing categories:
+Planned additional sources:
 
-- Sale
-- Rent
+- Property24
+- HassConsult
+- direct user-submitted listings
+- public building/development information
+- other approved real-estate data
 
-The present system is primarily a data collection, normalization,
-storage, image collection, and scrape-history foundation.
+LocationOS is intended to evolve away from dependency on any single scraped portal.
 
-Advanced investment intelligence is not yet fully implemented.
+## 2. Current Database Checkpoint
 
----
+Most recent development counts discussed:
 
-# 2. Current Database Size
+- total properties: 16,373
+- sale: 11,648
+- rent: 4,723
+- NULL listing type: 2
+- live: 15,245
+- inactive: 1,128
 
-At the current checkpoint, the Supabase database contains:
+Core field checks:
 
-Total properties:
-14,702
+- missing price: 0
+- invalid/non-positive price: 13
+- bedrooms present: 16,259
+- bedrooms missing: 114
+- invalid bedrooms: 0
+- bathrooms present: 8,853
+- bathrooms missing: 7,520
+- invalid bathrooms: 0
 
-Property distribution:
+These are snapshots, not constants. Re-query production before relying on them.
 
-Sale:
-10,549
+## 3. Listing Ingestion Foundation — IMPLEMENTED / TESTED
 
-Rent:
-4,151
+Implemented:
 
-NULL listing type:
-2
+- BuyRentKenya link collection
+- source/listing identity
+- page requests and retry behavior
+- JSON-LD graph parsing
+- extraction
+- normalization
+- image extraction
+- Supabase persistence
+- upserts
+- duplicate protection
+- last_seen_at
+- scrape runs
+- scrape snapshots
+- missing-listing detection
 
-These numbers represent the current database state and should not be
-assumed to remain constant as scraping continues.
+Historical known-good full test:
 
----
+999 / 999 listings processed.
 
-# 3. Current Scrape Test
+## 4. Source Listing Identity — IMPLEMENTED
 
-The current links file contained:
+Current source identity:
 
-Sale listings:
-523
+source + listing_id
 
-Rent listings:
-476
+This remains the stable source-record identity.
 
-Total:
-999
+Duplicate URL analysis returned no duplicate source URLs at the reviewed checkpoint.
 
-A full scraper test was successfully completed.
+Listing ≠ Apartment.
 
-Result:
+## 5. Extractor — IMPLEMENTED
 
-999 / 999 properties processed.
-
-This is an important verified checkpoint.
-
----
-
-# 4. Current Scraper
-
-Primary scraper:
-
-scraper.py
-
-Current responsibilities include:
-
-- reading listing records
-- identifying listing type
-- requesting source pages
-- checking whether a listing is available
-- retrying failed requests
-- parsing HTML
-- locating JSON-LD structured data
-- passing extracted graph data to extractor.py
-- normalizing extracted property data
-- saving properties
-- collecting property images
-- flushing batches
-- tracking scrape runs
-- recording properties found during a run
-- finishing the scrape run
-
-Current status:
-
-IMPLEMENTED
-
-TESTED
-
----
-
-# 5. Current Extractor
-
-Primary extraction module:
-
-extractor.py
-
-The extractor currently identifies relevant JSON-LD entities including:
+The current BuyRentKenya extractor uses JSON-LD entities including:
 
 - Product
 - Accommodation
 - RealEstateListing
 - RealEstateAgent
 
-Current extraction includes fields such as:
+It extracts fields including:
 
 - title
 - description
-- image URLs
+- images
 - bedrooms
 - bathrooms
 - price
 - currency
 - location
-- listing ID
+- listing_id
 - source
-- listing type
+- listing_type
 - URL
-- posted date
-- last updated date
+- posted/updated dates
 - live status
-- agent name
+- agent
 
-Current status:
+Important current source behavior:
 
-IMPLEMENTED
+BuyRentKenya may leave structured location information incomplete, so current extraction/normalization can infer location from listing title patterns. Do not remove that behavior casually.
 
-TESTED
+Raw JSON-LD inspection showed additional useful evidence such as PostalAddress locality/region, breadcrumbs, Product category, and Place/Accommodation address relationships. Future enrichment may use those fields.
 
----
-
-# 6. Current Image Collection
-
-Property image extraction is implemented.
-
-Images are extracted from the Product image field.
-
-The system supports image representations including:
-
-- lists
-- dictionaries
-- strings
-
-Image URLs are collected into:
-
-image_urls
-
-The database layer then stores image information in:
-
-property_images
-
-Current image information includes:
-
-- listing ID
-- image URL
-- image order
-
-A full scraper test successfully processed property images.
-
-Current status:
-
-IMPLEMENTED
-
-TESTED
-
----
-
-# 7. Current Normalization
-
-The normalization system is implemented.
-
-The project contains a normalize module used to transform raw extracted
-property information into a structured representation.
+## 6. Normalization — IMPLEMENTED / TESTED
 
 Current normalization areas include:
 
@@ -208,750 +127,276 @@ Current normalization areas include:
 - bathrooms
 - pricing
 - amenities
-- property information
+- property fields
 
-Normalization is performed before saving the property.
+Current data quality is intentionally not being perfected before launch. Missing/weak fields such as bathrooms and ambiguous locations can be improved later through AI normalization, richer sources, and direct user submissions.
 
-Current status:
+## 7. Scrape Lifecycle Safety — IMPLEMENTED IN CURRENT WORKING DESIGN
 
-IMPLEMENTED
+The scraper safety work added concepts including:
 
-TESTED
+- batch upload failure propagation
+- completed / incomplete / failed run states
+- expected processed-count gating
+- persisted snapshot-count verification before safe completion
+- fail_scrape_run handling
+- main() / __main__ execution structure
 
----
+Codex must inspect current scraper.py and database.py to verify the exact repository state before changing this behavior.
 
-# 8. Current Property Storage
+A failed/incomplete run must not trigger mass inactive-property updates.
 
-Properties are stored in Supabase.
-
-The database layer performs batch uploads.
-
-Current batch size:
-
-100 properties
-
-Property records are upserted using:
-
-source + listing_id
-
-The purpose is to update existing source listings rather than blindly
-create duplicates.
-
-The database has a uniqueness constraint protecting the source/listing
-identity.
-
-Current status:
-
-IMPLEMENTED
-
-TESTED
-
----
-
-# 9. Current Property Image Storage
-
-Images are stored separately from the main property record.
+## 8. Price History V1 — IMPLEMENTED / TESTED
 
 Current table:
 
-property_images
+property_price_history
 
-The database uses:
+Current derived view:
 
-listing_id + image_url
+property_price_history_view
 
-as the conflict target for image upserts.
+A controlled BuyRentKenya test used listing 4045566 and successfully produced multiple price observations across scrape runs.
 
-This allows multiple images to belong to the same listing while
-preventing duplicate image records.
+The view correctly derived:
 
-Current status:
+- previous_price
+- current_price
+- price_change
+- price_change_percent
+- price_direction
 
-IMPLEMENTED
+The tested repeated observations had the same price and correctly returned:
 
-TESTED
+unchanged
 
----
+This is asking-price history, not transaction-price history.
 
-# 10. Current Last-Seen Tracking
+## 9. Apartment Identity V1 — IMPLEMENTED / TESTED
 
-Properties currently receive:
-
-last_seen_at
-
-when they are processed by the scraper.
-
-This allows LocationOS to determine when a listing was last observed.
-
-Current status:
-
-IMPLEMENTED
-
-TESTED
-
----
-
-# 11. Current Scrape Run Tracking
-
-The database contains:
-
-scrape_runs
-
-A scrape run records information including:
-
-- source
-- status
-- started_at
-- completed_at
-- properties_found
-
-The scraper starts a run before processing listings and completes the
-run after the scrape finishes.
-
-Current status:
-
-IMPLEMENTED
-
-TESTED
-
----
-
-# 12. Current Scrape Snapshot Tracking
-
-The database contains:
-
-scrape_run_properties
-
-This table records which listings were observed during a scrape run.
-
-The relationship is:
-
-scrape_runs
-→ scrape_run_properties
-
-The current snapshot system was tested using the 999-listing scrape.
-
-Expected verified result:
-
-999 listings recorded for the completed scrape run.
-
-Current status:
-
-IMPLEMENTED
-
-TESTED
-
----
-
-# 13. Current Missing-Listing Detection
-
-The scraper compares the current successful scrape against previously
-observed listings.
-
-The system can identify properties that were not seen during a later
-completed scrape.
-
-The system is designed to mark missing listings inactive only after
-the relevant scrape has successfully completed.
-
-This prevents an incomplete scrape from causing mass false
-deactivation.
-
-The 999-listing test completed successfully and reported:
-
-No properties disappeared.
-
-Current status:
-
-IMPLEMENTED
-
-TESTED
-
----
-
-# 14. Current Active/Inactive Representation
-
-The current database represents the live status field as text rather
-than PostgreSQL boolean.
-
-This is important when writing SQL.
-
-For example, queries should not assume:
-
-is_live = true
-
-unless the actual database type has been changed.
-
-The current verified SQL approach groups the values directly:
-
-SELECT is_live, COUNT(*)
-FROM properties
-GROUP BY is_live;
-
-Current status:
-
-IMPLEMENTED
-
-TESTED
-
----
-
-# 15. Current Property Identity
-
-The current source-level property identity is:
-
-source + listing_id
-
-The database contains a uniqueness constraint protecting this
-relationship.
-
-This prevents duplicate source listings from being inserted as
-separate records when the same source listing is encountered again.
-
-Current status:
-
-IMPLEMENTED
-
-TESTED
-
----
-
-# 16. Current Database Tables
-
-The current LocationOS data foundation uses tables including:
-
-properties
-
-property_images
-
-scrape_runs
-
-scrape_run_properties
-
-These tables form the current listing and scrape-history foundation.
-
-Future tables may be introduced for:
+Current tables:
 
 - apartments
-- buildings
-- price history
-- locations
-- transactions
-- developers
-- market intelligence
-- investment calculations
+- apartment_listings
 
-Those future tables are not assumed to exist unless verified.
+A PostgreSQL sequence/default generates LocationOS apartment codes.
 
----
+Examples verified during development:
 
-# 17. Current Apartment Layer
+- APT-000001 → BuyRentKenya listing 4045566 → confirmed
+- APT-000003 → BuyRentKenya listing 4045574 → unmatched
 
-A separate physical-apartment identity layer has not yet been fully
-implemented.
+A sequence gap is acceptable and identifiers must not be recycled.
 
-The system currently stores source listings.
+Automatic identity logic was tested to:
 
-The future architecture will distinguish:
+- reuse an existing listing/apartment relationship
+- create a new apartment identity for a new listing
+- preserve unmatched status where a physical-unit match has not been established
 
-Listing
-→ Apartment
+This is an identity foundation, not a complete apartment-matching engine.
 
-Multiple listings may eventually represent the same physical
-apartment.
+## 10. Apartment Matching Engine — NOT YET COMPLETE
 
-Current status:
+A production fuzzy/AI apartment matching system is still planned.
 
-PLANNED
+Potential evidence later includes:
 
----
-
-# 18. Current Apartment Matching Engine
-
-A production apartment matching engine has not yet been implemented.
-
-The planned matching engine will eventually consider evidence such as:
-
-- GPS
-- approximate location
-- building
-- apartment size
+- building identity
+- location
+- size
 - bedrooms
 - bathrooms
 - floor
 - unit number
 - price
 - descriptions
-- photographs
+- images
 - amenities
-- parking
 - furnished status
 
-Low-confidence matches should remain unresolved.
+Low confidence must remain unresolved.
 
-Current status:
+## 11. Canonical Building Information Table — CREATED, NOT POPULATED
 
-PLANNED
+Current table:
 
----
+buildings
 
-# 19. Current Building Layer
+Known fields include:
 
-A production building identity system has not yet been implemented.
-
-The future system may create internal building identifiers such as:
-
-BLD-00001
-BLD-00002
-BLD-00003
-
-These IDs will represent system entities even when official building
-names are unknown.
-
-Current status:
-
-PLANNED
-
----
-
-# 20. Current Building Matching Engine
-
-A production building matching engine has not yet been implemented.
-
-Future evidence may include:
-
-- GPS
-- approximate location
-- exterior photographs
-- interior photographs
-- building appearance
-- floors
-- amenities
-- pool
-- gym
-- parking
-- apartment size
-- floor
-- bedrooms
-- price
-- nearby landmarks
-- description similarity
-
-Low-confidence matches must remain:
-
-Unknown building.
-
-Current status:
-
-PLANNED
-
----
-
-# 21. Current Building Information
-
-A complete building profile is not yet implemented.
-
-Future building information may include:
-
-- Building ID
-- Name
-- GPS
-- County
-- Area
-- Developer
-- Year built
-- Number of floors
-- Number of units
-- Amenities
-- Elevator
-- Generator
-- Borehole
-- Swimming pool
-- Gym
-- CCTV
-- Security
-- Fiber
-- Parking
-- Property manager
-- Management information
-
-Current status:
-
-PLANNED
-
----
-
-# 22. Current Price History
-
-Price history tracking is not yet implemented as a complete
-historical pricing system.
-
-The current system stores current listing information.
-
-The future price-history system should preserve changes such as:
-
-January:
-12.0M
-
-March:
-11.7M
-
-May:
-11.2M
-
-August:
-10.8M
-
-The historical system should allow LocationOS to analyze:
-
-- price reductions
-- price increases
-- pricing duration
-- price movement
-- negotiation signals
-
-Current status:
-
-PLANNED
-
----
-
-# 23. Current Location Intelligence
-
-A complete location-intelligence layer has not yet been implemented.
-
-Future relationships may include:
-
-- CBD
-- schools
-- hospitals
-- shopping centres
-- universities
-- office parks
-- industrial areas
-- bus stops
-- railway
-- highways
-- major landmarks
-
-Current status:
-
-PLANNED
-
----
-
-# 24. Current Market Intelligence
-
-A complete market-intelligence layer has not yet been implemented.
-
-Future indicators may include:
-
-- rental demand
-- vacancy
-- population growth
-- income indicators
-- apartment supply
-- new developments
-- infrastructure projects
-- traffic
-- crime indicators
-- price growth
-- rent growth
-
-Current status:
-
-PLANNED
-
----
-
-# 25. Current Transaction Layer
-
-Actual transaction data is not currently a complete implemented
-component of the system.
-
-Future transaction information may include:
-
-- transaction date
-- transaction price
-- property
-- apartment
-- building
-- transaction type
-- source
-- confidence
-
-Current status:
-
-PLANNED
-
----
-
-# 26. Current Investment Calculations
-
-The full LocationOS investment engine has not yet been implemented.
-
-Future calculations include:
-
-- gross rental yield
-- net rental yield
-- price per square metre
-- rent per square metre
-
-Current status:
-
-PLANNED
-
----
-
-# 27. Current Liquidity Score
-
-A production liquidity scoring system has not yet been implemented.
-
-Future inputs may include:
-
-- days on market
+- id
+- building_code
+- name
+- latitude
+- longitude
+- county
 - area
-- building
-- unit type
-- price bracket
-- historical transactions
-
-Current status:
-
-PLANNED
-
----
-
-# 28. Current Off-Plan Risk Engine
-
-A production off-plan risk engine has not yet been implemented.
-
-Future evidence may include:
-
-- developer history
-- project completion history
-- delivery delays
-- project performance
-- historical reliability
-
-Current status:
-
-PLANNED
-
----
-
-# 29. Current Investment Score
-
-A production investment scoring system has not yet been implemented.
-
-The conceptual future framework is:
-
-Yield — 40%
-Appreciation — 30%
-Vacancy risk — 20%
-Liquidity — 10%
-
-The long-term objective is to make weighting dependent on investor
-objectives.
-
-Current status:
-
-PLANNED
-
----
-
-# 30. Current Data Confidence System
-
-A complete data-confidence system has not yet been implemented.
-
-Future intelligence outputs should communicate the strength of their
-evidence.
-
-Potential evidence includes:
-
-- comparable properties
-- transaction records
-- building match strength
-- price recency
-- historical data quantity
-- source quality
-
-Current status:
-
-PLANNED
-
----
-
-# 31. Current AI Data Steward
-
-The AI Data Steward has not yet been implemented.
-
-Future monitoring may include:
-
-- duplicates
-- contradictions
-- suspicious prices
-- missing information
-- outdated records
-- bad building matches
-- unusual changes
-- normalization problems
-- data-quality issues
-
-Current status:
-
-PLANNED
-
----
-
-# 32. Current Apartment Intelligence Page
-
-The final Apartment Intelligence interface has not yet been
-implemented.
-
-The intended interface may eventually display:
-
-- current asking price
-- estimated fair value
-- gross yield
-- net yield
-- liquidity
-- investment score
-- building
 - developer
-- data confidence
-- Airbnb potential
-- market trend
-- LocationOS assessment
-- explanation of the assessment
+- year_built
+- number_of_floors
+- number_of_units
+- created_at
+- updated_at
 
-Current status:
+The table was intentionally reinterpreted as the future canonical/enriched building-information layer.
 
-PLANNED
+It should be populated from stronger building/development sources rather than weak listing guesses.
 
----
+At the last verified checkpoint:
 
-# 33. Verified Full-Scrape Checkpoint
+building_count = 0
 
-The current development checkpoint includes a successful full scrape.
+## 12. Apartment-to-Building Relationship — CREATED, NOT POPULATED
 
-Input:
+Current table:
 
-999 listings
+apartment_buildings
 
-Result:
+Known relationship fields include:
 
-999 / 999 properties processed.
+- apartment_id
+- building_id
+- match_status
+- match_confidence
+- match_method
+- timestamps
 
-The run completed successfully.
+At the last verified checkpoint:
 
-The system reported:
+0 relationship rows
 
-No properties disappeared.
+The relationship exists structurally but no production building matches were created.
 
-The corresponding database verification also confirmed the expected
-scrape-run and snapshot results.
+## 13. Listing-Derived Building Entity Layer — NEXT / IN PROGRESS
 
-This checkpoint should be treated as a known-good baseline.
+The next agreed architecture separates listing-derived building identity from canonical enriched building information.
 
----
+Planned table:
 
-# 34. Current Development Priority
+building_entities
 
-The current priority is not to immediately implement advanced
-investment intelligence.
+Purpose:
 
-The priority is to continue strengthening the data foundation in a
-controlled sequence.
+Represent a LocationOS-inferred building cluster/entity when listings appear to refer to the same physical building, even if verified building metadata is not yet known.
 
-The next major planned capability is:
+Discussed candidate fields:
 
-Price History.
+- id
+- building_code
+- canonical_name
+- normalized_name
+- location
+- standard_location
+- address_text
+- match_confidence
+- match_method
+- first_seen_at
+- last_seen_at
+- created_at
+- updated_at
 
-Before implementing it, the current codebase and database behavior
-should remain stable and documented.
+This table was the immediate next implementation step. Do not assume it exists until Supabase is inspected.
 
----
+## 14. Building Matching Findings So Far
 
-# 35. Important Development Rule
+Data analysis showed:
 
-The roadmap contains future functionality.
+- standard_location is too broad to identify buildings by itself
+- Westlands alone contained thousands of listings
+- exact repeated titles are often template-like and can represent many different properties
+- description contains potentially useful building names, roads, landmarks, floors, and development clues
+- amenities can support a match but are not unique building identifiers
+- generic amenities must not determine identity
+- multiple imperfect signals should be combined
+- low confidence should not force a building assignment
 
-The current state document contains implemented functionality.
+Later matching can use:
 
-Codex must not assume that something is implemented merely because it
-appears in:
+- explicit development/building names
+- normalized road/address clues
+- description semantics
+- standard/location fields
+- agent/source patterns
+- amenity fingerprints as supporting evidence
+- images
+- GPS
+- public canonical building data
+- AI matching
 
-LOCATIONOS_STAGE_1_ROADMAP.md
+## 15. Public Building Enrichment Strategy — PLANNED
 
-When there is a conflict:
+LocationOS should later collect actual building/development information from approved public sources.
 
-- inspect the actual code
-- inspect the actual database schema
-- inspect tests
-- treat verified implementation as authoritative
+That data can include:
 
-Do not implement a planned feature twice.
+- official/name variants
+- GPS
+- developer
+- year built
+- floors
+- units
+- amenities
+- management information
+- public development/project evidence
 
----
+That canonical data should then be matched against listing-derived building_entities.
 
-# 36. Current Known-Good Git Checkpoint
+Conceptual flow:
 
-The current working code was committed locally and pushed to GitHub.
+Listings
+→ building_entities
+→ matching / verification
+→ buildings
 
-Current main commit:
+## 16. Additional Source Strategy — PLANNED
 
-adc1f20
+Property24 and HassConsult are intentionally deferred.
 
-Commit message:
+They should be built as separate ingestion modules and later connect through the common LocationOS canonical layers.
 
-Complete LocationOS scraping pipeline
+Do not make their future integration disturb the existing BuyRentKenya pipeline.
 
-The local branch is synchronized with:
+## 17. Direct User Listings — LAUNCH / POST-LAUNCH PRIORITY
 
-origin/main
+LocationOS should eventually allow users/agents/owners to submit listings directly.
 
-The only intentionally untracked runtime file is:
+Long-term goal:
 
-property_scraper.log
+reduce dependence on scraped portals and improve data completeness/quality.
 
-It should not be committed.
+AI normalization can later help standardize direct and scraped submissions while preserving raw source evidence.
 
----
+## 18. Current Development Priority
 
-# 37. Current Repository State
+Immediate next work:
 
-Important current project components include:
+1. inspect actual repository and production schema
+2. update/reconcile documentation with actual state
+3. implement building_entities safely
+4. create the first conservative listing-derived building identity workflow
+5. preserve buildings as canonical/enriched information
+6. continue through Stage 1 launch-critical intelligence
 
-AGENTS.md
+Do not spend pre-launch time perfecting every source-data deficiency.
 
-scraper.py
+## 19. Not Yet Launch-Complete
 
-extractor.py
+Still important before/around first public launch:
 
-database.py
+- building identity V1
+- building/entity relationships
+- basic building enrichment
+- location intelligence V1
+- apartment information consolidation
+- price/m² and rent/m² where size exists
+- gross-yield calculation where inputs support it
+- basic data confidence
+- apartment intelligence UI
+- search/filtering
+- production frontend/deployment
+- monitoring/analytics/security
+- user listing submission path
+- Property24 / HassConsult integration according to launch timing
 
-normalize/
-
-docs/
-
-The repository should be inspected before making architectural
-changes.
-
----
-
-# 38. Development Principle
-
-The current system should evolve iteratively:
-
-Collect
-→ Structure
-→ Enrich
-→ Verify
-→ Calculate
-→ Learn
-→ Update
-
-Do not sacrifice data integrity for feature speed.
-
-The objective is a trustworthy real-estate intelligence system.
+Advanced liquidity, off-plan risk, full AI data stewardship, sophisticated investment scoring, and perfect matching should not block the first usable product unless explicitly reprioritized.
