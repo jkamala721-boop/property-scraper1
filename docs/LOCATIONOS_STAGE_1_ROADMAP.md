@@ -91,10 +91,10 @@ Listings/apartments can cluster toward a physical building identity without inve
 The entity has a nullable `canonical_building_id` to `buildings(id)`. The
 separate `apartment_building_entities` relationship owns match status,
 confidence, method, and evidence. The first controlled Garden City entity and
-two candidate relationships are present; `apartment_buildings` remains
-separate.
+four reviewed candidate relationships are present; `apartment_buildings`
+remains separate.
 
-### Building Matching V1 — DETERMINISTIC DRY RUN IMPLEMENTED
+### Building Matching V1 — DETERMINISTIC DRY RUN / CANDIDATE WRITE IMPLEMENTED
 
 Use multiple signals conservatively:
 
@@ -108,10 +108,11 @@ Use multiple signals conservatively:
 
 Low confidence remains unresolved.
 
-The current V1 implementation is read-only, uses an explicitly bounded sample,
-and produces explainable candidate or abstention reports. It is not connected
-to the scraper and does not create or update database rows. Calibration and
-review must precede any write workflow.
+The V1 implementation uses an explicitly bounded sample and produces
+explainable candidate or abstention reports. It has explicit dry-run and write
+modes and is not connected to the scraper. Write mode inserts only unambiguous
+strong candidates at confidence 0.85 or higher, never updates an existing
+relationship, and never writes canonical-building data.
 
 Only confirmed relationships or sufficiently confident candidates explicitly
 marked `manual_multi_signal_review` may seed reference evidence. Automated
@@ -226,8 +227,8 @@ Listing collection
 
 Current next milestone:
 
-Review Building Matching V1 dry-run results
-→ approve/calibrate a controlled write workflow
+Validate Building Matching V1 candidate writes on small reviewed samples
+→ calibrate before any wider run
 → Canonical Building Enrichment
 → Location / Basic Metrics
 → Product UI

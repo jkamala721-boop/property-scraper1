@@ -182,11 +182,18 @@ Current empirical findings:
 - description may contain useful development names/floors/landmarks
 - low confidence = unresolved
 
-Building Matching V1 is implemented as an isolated deterministic dry-run
-module. It requires an explicit, bounded listing sample, compares each listing
-against existing building entities and sufficiently strong reference
-relationships, and emits explainable candidate or abstention results. It is not
-connected to the scraper and has no database write path.
+Building Matching V1 is implemented as an isolated deterministic workflow. It
+requires an explicit, bounded listing sample, compares each listing against
+existing building entities and sufficiently strong reference relationships,
+and emits explainable candidate or abstention results. It provides an explicit
+dry-run mode and is not connected to the scraper.
+
+An explicit write mode can insert only unambiguous `strong_candidate` results
+at confidence 0.85 or higher. These rows always use `match_status = candidate`
+and `match_method = deterministic_v1_auto`. Review candidates, no-match
+outcomes, hard location/address conflicts, ambiguous results, and existing
+apartment/entity pairs are never written. Database uniqueness makes reruns
+idempotent.
 
 V1 requires at least two independent building-identity signals. Agent/contact,
 floor, amenities, and posting proximity can increase confidence but cannot

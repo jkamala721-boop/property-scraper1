@@ -203,12 +203,18 @@ Implemented fields:
 - created_at TIMESTAMPTZ
 - updated_at TIMESTAMPTZ
 
-The controlled Garden City test has two candidate rows for apartment IDs 1 and
-4. The deterministic V1 matcher reads candidate rows as reference evidence only
-when `match_method = 'manual_multi_signal_review'` and confidence is at least
-the strong-candidate threshold. Confirmed rows are also eligible. Automated
-candidate rows are never eligible to seed reference evidence. The matcher does
-not write relationships or change database state.
+The controlled Garden City data has four candidate relationships: manually
+reviewed rows for apartment IDs 1 and 4 and reviewed deterministic rows for
+apartment IDs 5 and 7. The deterministic V1 matcher reads candidate rows as
+reference evidence only when `match_method = 'manual_multi_signal_review'` and
+confidence is at least the strong-candidate threshold. Confirmed rows are also
+eligible. Automated candidate rows are never eligible to seed reference
+evidence.
+
+The isolated matcher has an explicit write mode that can insert only new,
+unambiguous strong candidates as `candidate` rows with method
+`deterministic_v1_auto`. It never updates an existing pair. The unique
+`(apartment_id, building_entity_id)` constraint is the final idempotency guard.
 
 ## 8. Recommended Relationship Model
 

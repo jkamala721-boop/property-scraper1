@@ -315,20 +315,25 @@ apartment_building_entities
 Match status, confidence, method, and evidence belong to this apartment-to-entity relationship, not to `building_entities`.
 
 The controlled Garden City entity has candidate relationships to apartment IDs
-1 and 4 at confidence 0.90 using `manual_multi_signal_review`. These are not
+1 and 4 at confidence 0.90 using `manual_multi_signal_review`, plus reviewed
+deterministic candidate relationships to apartment IDs 5 and 7. These are not
 canonical-building relationships.
 
-## 14. Building Matching V1 — DETERMINISTIC DRY RUN
+## 14. Building Matching V1 — DETERMINISTIC DRY RUN / EXPLICIT CANDIDATE WRITE
 
-An isolated deterministic matcher now supports read-only, explicitly bounded
-dry runs. It compares listing/apartment evidence with existing
+An isolated deterministic matcher supports read-only, explicitly bounded dry
+runs. It compares listing/apartment evidence with existing
 `building_entities` and trusted entity reference listings. It reports strong
 candidates, review candidates, or explicit abstentions with matched signals,
 conflicts, confidence, and an explanation.
 
-V1 does not create entities or relationships, does not update existing rows,
-and is not called by the production scraper. Automated proposals remain
-candidate recommendations only.
+An explicit write mode is implemented but remains isolated from the production
+scraper. It inserts only unambiguous `strong_candidate` results at confidence
+0.85 or higher as `candidate` relationships using
+`deterministic_v1_auto`. It never updates existing relationship rows and uses
+the unique apartment/entity pair constraint to make reruns idempotent. It never
+creates or changes building entities, canonical buildings, or
+apartment-to-canonical-building links.
 
 Only confirmed relationships, or manually reviewed candidates using
 `manual_multi_signal_review` at the minimum confidence threshold, can seed
@@ -414,7 +419,8 @@ Immediate next work:
 1. inspect actual repository and production schema
 2. update/reconcile documentation with actual state
 3. review and calibrate Building Matching V1 dry-run results
-4. approve a conservative listing-derived write workflow only after review
+4. validate the conservative write workflow on small reviewed samples before
+   any wider run
 5. preserve buildings as canonical/enriched information
 6. continue through Stage 1 launch-critical intelligence
 

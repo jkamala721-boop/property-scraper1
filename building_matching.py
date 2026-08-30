@@ -1,8 +1,9 @@
-"""Deterministic, read-only apartment-to-building-entity matching.
+"""Deterministic apartment-to-building-entity matching.
 
-Building Matching V1 deliberately produces recommendations only.  It does not
-insert, update, delete, merge, or relink database rows.  The command-line entry
-point requires an explicit, bounded listing-id sample.
+Building Matching V1 is read-only by default.  Its explicit write mode can
+only insert strong, unambiguous candidate relationships for an explicitly
+bounded listing-id sample.  It never creates or changes building entities,
+canonical buildings, or canonical-building relationships.
 """
 
 from __future__ import annotations
@@ -22,6 +23,8 @@ AMBIGUITY_MARGIN = 0.08
 MAX_SAMPLE_SIZE = 50
 MAX_ENTITY_COUNT = 500
 MAX_REFERENCE_RELATIONSHIPS = 5000
+MATCHER_VERSION = "deterministic_v1"
+AUTO_MATCH_METHOD = "deterministic_v1_auto"
 
 WEIGHTS = {
     "entity_name": 0.55,
@@ -561,7 +564,7 @@ def build_profiles_from_rows(
         row for row in relationship_rows if relationship_can_seed_reference(row)
     ]
     existing_by_apartment: dict[int, set[int]] = {}
-    for row in accepted_relationships:
+    for row in relationship_rows:
         existing_by_apartment.setdefault(int(row["apartment_id"]), set()).add(int(row["building_entity_id"]))
 
     candidates = [
@@ -711,9 +714,123 @@ def _load_client() -> Any:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-def _report(decisions: Sequence[MatchDecision]) -> dict[str, Any]:
+def _is_ambiguous(decision: MatchDecision) -> bool:
+    return decision.outcome == "no_match" and "ambiguity" in decision.explanation.lower()
+
+
+def auto_write_ineligibility(decision: MatchDecision) -> str | None:
+    """Return why a decision cannot be auto-written, or None when eligible."""
+
+    if decision.existing_relationship:
+        return "existing_relationship"
+    if decision.outcome != "strong_candidate":
+        return decision.outcome
+    if decision.confidence < STRONG_CANDIDATE_THRESHOLD:
+        return "below_strong_threshold"
+    if decision.conflicting_signals:
+        return "conflicting_evidence"
+    if decision.proposed_building_entity_id is None or decision.proposed_building_code is None:
+        return "missing_proposed_entity"
+    return None
+
+
+def build_auto_candidate_row(decision: MatchDecision) -> dict[str, Any]:
+    """Build the only relationship shape permitted for automated V1 writes."""
+
+    ineligibility = auto_write_ineligibility(decision)
+    if ineligibility is not None:
+        raise ValueError(f"Decision is not eligible for automated write: {ineligibility}")
+
     return {
-        "mode": "dry_run",
+        "apartment_id": decision.apartment_id,
+        "building_entity_id": decision.proposed_building_entity_id,
+        "match_status": "candidate",
+        "match_confidence": decision.confidence,
+        "match_method": AUTO_MATCH_METHOD,
+        "evidence": {
+            "source": decision.source,
+            "listing_id": decision.listing_id,
+            "matcher": {
+                "version": MATCHER_VERSION,
+                "method": AUTO_MATCH_METHOD,
+                "outcome": decision.outcome,
+                "score": decision.confidence,
+            },
+            "entity": {
+                "id": decision.proposed_building_entity_id,
+                "code": decision.proposed_building_code,
+            },
+            "matched_signals": [asdict(signal) for signal in decision.matched_signals],
+            "conflicting_signals": [asdict(signal) for signal in decision.conflicting_signals],
+            "weak_compatibility_signals": list(decision.weak_compatibility_signals),
+            "explanation": decision.explanation,
+            "thresholds": {
+                "strong_candidate": STRONG_CANDIDATE_THRESHOLD,
+                "review_candidate": REVIEW_CANDIDATE_THRESHOLD,
+                "ambiguity_margin": AMBIGUITY_MARGIN,
+                "minimum_identity_signals": 2,
+            },
+        },
+    }
+
+
+def write_auto_candidates(client: Any, decisions: Sequence[MatchDecision]) -> dict[str, Any]:
+    """Insert eligible candidate rows without updating duplicates.
+
+    The database uniqueness constraint on (apartment_id, building_entity_id)
+    is the final idempotency guard.  ``ignore_duplicates`` makes a concurrent
+    or already-present relationship a no-op while all other database errors
+    still propagate.
+    """
+
+    inserted: list[dict[str, Any]] = []
+    existing_relationships_skipped: list[dict[str, Any]] = []
+    ineligible_skipped: list[dict[str, Any]] = []
+
+    for decision in decisions:
+        reason = auto_write_ineligibility(decision)
+        if reason == "existing_relationship":
+            existing_relationships_skipped.append(decision.to_dict())
+            continue
+        if reason is not None:
+            ineligible_skipped.append({"reason": reason, "decision": decision.to_dict()})
+            continue
+
+        row = build_auto_candidate_row(decision)
+        response = (
+            client.table("apartment_building_entities")
+            .upsert(
+                row,
+                on_conflict="apartment_id,building_entity_id",
+                ignore_duplicates=True,
+            )
+            .execute()
+        )
+        persisted_rows = _response_data(response)
+        if persisted_rows:
+            inserted.extend(persisted_rows)
+        else:
+            existing_relationships_skipped.append(decision.to_dict())
+
+    return {
+        "inserted": inserted,
+        "inserted_count": len(inserted),
+        "existing_relationships_skipped": existing_relationships_skipped,
+        "existing_relationships_skipped_count": len(existing_relationships_skipped),
+        "ineligible_skipped": ineligible_skipped,
+        "ineligible_skipped_count": len(ineligible_skipped),
+    }
+
+
+def _report(decisions: Sequence[MatchDecision], mode: str = "dry_run") -> dict[str, Any]:
+    strong_candidates = [decision for decision in decisions if decision.outcome == "strong_candidate"]
+    abstentions = [decision for decision in decisions if decision.outcome != "strong_candidate"]
+    ambiguous_cases = [decision for decision in decisions if _is_ambiguous(decision)]
+    conflicts = [decision for decision in decisions if decision.conflicting_signals]
+    existing_relationships = [decision for decision in decisions if decision.existing_relationship]
+
+    return {
+        "mode": mode,
         "writes_performed": False,
         "thresholds": {
             "strong_candidate": STRONG_CANDIDATE_THRESHOLD,
@@ -721,18 +838,47 @@ def _report(decisions: Sequence[MatchDecision]) -> dict[str, Any]:
             "ambiguity_margin": AMBIGUITY_MARGIN,
             "minimum_identity_signals": 2,
         },
+        "summary": {
+            "listings_evaluated": len(decisions),
+            "strong_candidates": len(strong_candidates),
+            "abstentions": len(abstentions),
+            "ambiguous_cases": len(ambiguous_cases),
+            "conflicts": len(conflicts),
+            "existing_relationships_skipped": len(existing_relationships),
+        },
+        "strong_candidates": [decision.to_dict() for decision in strong_candidates],
+        "abstentions": [decision.to_dict() for decision in abstentions],
+        "ambiguous_cases": [decision.to_dict() for decision in ambiguous_cases],
+        "conflicts": [decision.to_dict() for decision in conflicts],
+        "existing_relationships_skipped": [decision.to_dict() for decision in existing_relationships],
         "results": [decision.to_dict() for decision in decisions],
     }
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Read-only deterministic building matcher")
+    parser = argparse.ArgumentParser(description="Deterministic Building Matching V1 workflow")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--dry-run", action="store_true", help="Evaluate and report without writes")
+    mode.add_argument("--write", action="store_true", help="Insert only eligible strong candidate relationships")
     parser.add_argument("--listing-id", type=int, action="append", required=True, help="Explicit listing id; repeat for a small sample")
     parser.add_argument("--source", default="BuyRentKenya")
     args = parser.parse_args(argv)
 
-    listings, entities = fetch_dry_run_inputs(_load_client(), args.listing_id, args.source)
-    print(json.dumps(_report(run_matcher(listings, entities)), indent=2, sort_keys=True))
+    client = _load_client()
+    listings, entities = fetch_dry_run_inputs(client, args.listing_id, args.source)
+    decisions = run_matcher(listings, entities)
+    report = _report(decisions, mode="write" if args.write else "dry_run")
+
+    if args.write:
+        print(
+            json.dumps({"phase": "pre_write", **report}, indent=2, sort_keys=True),
+            flush=True,
+        )
+        write_result = write_auto_candidates(client, decisions)
+        report["writes_performed"] = write_result["inserted_count"] > 0
+        report["write_result"] = write_result
+
+    print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 
 

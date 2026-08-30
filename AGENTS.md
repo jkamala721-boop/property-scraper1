@@ -59,7 +59,7 @@ The project has working functionality for:
 - apartment_buildings relationship table
 - listing-derived building_entities table
 - apartment_building_entities relationship table
-- deterministic Building Matching V1 dry-run recommendations
+- deterministic Building Matching V1 dry-run and explicit candidate-write workflow
 
 Known historical scraper checkpoint:
 
@@ -163,10 +163,12 @@ match and its evidence:
 - created_at
 - updated_at
 
-Building Matching V1 is an isolated deterministic dry-run matcher. It reads an
-explicit, bounded listing sample and existing entity/reference evidence, emits
-candidate or abstention reports, and performs no database writes. Automated V1
-results must not be treated as confirmed relationships.
+Building Matching V1 is isolated from the scraper. It reads an explicit,
+bounded listing sample and existing entity/reference evidence and provides an
+explicit dry-run mode. Its explicit write mode inserts only unambiguous
+`strong_candidate` relationships at confidence 0.85 or higher, always as
+`candidate` with method `deterministic_v1_auto`. It never creates or changes
+building entities or canonical-building records.
 
 Reference evidence may come from confirmed relationships or from candidate
 relationships explicitly marked `manual_multi_signal_review` at the minimum
@@ -383,8 +385,8 @@ The immediate engineering priority is:
 1. inspect repository and production schema
 2. reconcile these updated docs with actual code/database
 3. review and calibrate the deterministic Building Matching V1 dry run
-4. connect listing/apartment evidence to building entities conservatively only
-   after explicit approval of a write workflow
+4. validate the explicit, conservative Building Matching V1 candidate-write
+   workflow on small reviewed samples before any wider run
 5. preserve the separate canonical buildings enrichment layer
 6. continue Stage 1 launch work without over-engineering pre-launch systems
 

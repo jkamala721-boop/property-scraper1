@@ -1,6 +1,8 @@
 import unittest
+from types import SimpleNamespace
 
 from building_matching import (
+    AUTO_MATCH_METHOD,
     BuildingEntityProfile,
     ListingEvidence,
     REVIEW_CANDIDATE_THRESHOLD,
@@ -8,6 +10,7 @@ from building_matching import (
     build_profiles_from_rows,
     match_listing,
     score_entity,
+    write_auto_candidates,
 )
 
 
@@ -48,6 +51,36 @@ def entity(**overrides):
     return BuildingEntityProfile(**values)
 
 
+class FakeRelationshipClient:
+    def __init__(self, existing_pairs=()):
+        self.existing_pairs = set(existing_pairs)
+        self.upsert_calls = []
+        self.pending_row = None
+
+    def table(self, table_name):
+        if table_name != "apartment_building_entities":
+            raise AssertionError(f"Unexpected table: {table_name}")
+        return self
+
+    def upsert(self, row, *, on_conflict, ignore_duplicates):
+        self.upsert_calls.append(
+            {
+                "row": row,
+                "on_conflict": on_conflict,
+                "ignore_duplicates": ignore_duplicates,
+            }
+        )
+        self.pending_row = row
+        return self
+
+    def execute(self):
+        pair = (self.pending_row["apartment_id"], self.pending_row["building_entity_id"])
+        if pair in self.existing_pairs:
+            return SimpleNamespace(data=[])
+        self.existing_pairs.add(pair)
+        return SimpleNamespace(data=[{"id": len(self.existing_pairs), **self.pending_row}])
+
+
 class BuildingMatchingTests(unittest.TestCase):
     def test_only_manual_candidates_or_confirmed_relationships_seed_references(self):
         reference_rows = [
@@ -74,7 +107,7 @@ class BuildingMatchingTests(unittest.TestCase):
                 "building_entity_id": 2,
                 "match_status": "candidate",
                 "match_confidence": 0.99,
-                "match_method": "deterministic_v1",
+                "match_method": AUTO_MATCH_METHOD,
             },
             {
                 "apartment_id": 202,
@@ -106,6 +139,35 @@ class BuildingMatchingTests(unittest.TestCase):
         self.assertEqual(references_by_entity[2], [])
         self.assertEqual(references_by_entity[3], [202])
         self.assertEqual(references_by_entity[4], [203])
+
+    def test_auto_relationship_is_tracked_as_existing_but_cannot_seed_reference(self):
+        candidate_rows = [
+            {
+                "apartment_id": 201,
+                "source": "BuyRentKenya",
+                "listing_id": 7201,
+                "title": "Garden City apartment",
+                "description": "Garden City apartment in Garden Estate",
+            }
+        ]
+        relationship_rows = [
+            {
+                "apartment_id": 201,
+                "building_entity_id": 2,
+                "match_status": "candidate",
+                "match_confidence": 1.0,
+                "match_method": AUTO_MATCH_METHOD,
+            }
+        ]
+        candidates, profiles = build_profiles_from_rows(
+            candidate_rows=candidate_rows,
+            reference_rows=candidate_rows,
+            entity_rows=[{"id": 2, "building_code": "BENT-000002", "canonical_name": "Garden City"}],
+            relationship_rows=relationship_rows,
+        )
+
+        self.assertEqual(candidates[0].existing_entity_ids, frozenset({2}))
+        self.assertEqual(profiles[0].reference_listings, ())
 
     def test_strong_entity_name_in_title_and_location(self):
         candidate = listing(
@@ -236,6 +298,111 @@ class BuildingMatchingTests(unittest.TestCase):
         self.assertEqual(decision.proposed_building_code, "BENT-000002")
         self.assertEqual(decision.outcome, "strong_candidate")
         self.assertGreaterEqual(decision.confidence, STRONG_CANDIDATE_THRESHOLD)
+
+    def test_strong_candidate_is_written_as_candidate_with_structured_evidence(self):
+        decision = match_listing(
+            listing(title="Garden City apartment", location="Garden Estate"),
+            [entity()],
+        )
+        client = FakeRelationshipClient()
+
+        result = write_auto_candidates(client, [decision])
+
+        self.assertEqual(result["inserted_count"], 1)
+        self.assertEqual(len(client.upsert_calls), 1)
+        call = client.upsert_calls[0]
+        row = call["row"]
+        self.assertEqual(call["on_conflict"], "apartment_id,building_entity_id")
+        self.assertTrue(call["ignore_duplicates"])
+        self.assertEqual(row["match_status"], "candidate")
+        self.assertEqual(row["match_method"], AUTO_MATCH_METHOD)
+        self.assertEqual(row["match_confidence"], decision.confidence)
+        self.assertEqual(row["evidence"]["source"], "BuyRentKenya")
+        self.assertEqual(row["evidence"]["listing_id"], 5001)
+        self.assertEqual(row["evidence"]["entity"]["code"], "BENT-000002")
+        self.assertEqual(row["evidence"]["matcher"]["score"], decision.confidence)
+
+    def test_review_and_no_match_are_not_written(self):
+        review = match_listing(
+            listing(description="Garden City apartment", location="Garden Estate"),
+            [entity()],
+        )
+        no_match = match_listing(
+            listing(bedrooms=2, price=100000),
+            [entity(reference_listings=(listing(apartment_id=202, bedrooms=2, price=100000),))],
+        )
+        client = FakeRelationshipClient()
+
+        result = write_auto_candidates(client, [review, no_match])
+
+        self.assertEqual(review.outcome, "review_candidate")
+        self.assertEqual(no_match.outcome, "no_match")
+        self.assertEqual(result["inserted_count"], 0)
+        self.assertEqual(result["ineligible_skipped_count"], 2)
+        self.assertEqual(client.upsert_calls, [])
+
+    def test_ambiguous_candidate_is_not_written(self):
+        candidate = listing(title="Garden City apartment", location="Garden Estate")
+        decision = match_listing(
+            candidate,
+            [entity(id=2, building_code="BENT-000002"), entity(id=3, building_code="BENT-000003")],
+        )
+        client = FakeRelationshipClient()
+
+        result = write_auto_candidates(client, [decision])
+
+        self.assertIn("ambiguity", decision.explanation)
+        self.assertEqual(result["inserted_count"], 0)
+        self.assertEqual(client.upsert_calls, [])
+
+    def test_conflicting_location_is_not_written(self):
+        decision = match_listing(
+            listing(
+                title="Garden City apartment",
+                description="Garden City Mall on Thika Road",
+                location="Kilimani",
+                standard_location="Kilimani",
+            ),
+            [entity()],
+        )
+        client = FakeRelationshipClient()
+
+        result = write_auto_candidates(client, [decision])
+
+        self.assertTrue(decision.conflicting_signals)
+        self.assertEqual(result["inserted_count"], 0)
+        self.assertEqual(client.upsert_calls, [])
+
+    def test_duplicate_relationship_is_skipped_without_upsert(self):
+        decision = match_listing(
+            listing(
+                title="Garden City apartment",
+                location="Garden Estate",
+                existing_entity_ids=frozenset({2}),
+            ),
+            [entity()],
+        )
+        client = FakeRelationshipClient(existing_pairs={(101, 2)})
+
+        result = write_auto_candidates(client, [decision])
+
+        self.assertTrue(decision.existing_relationship)
+        self.assertEqual(result["existing_relationships_skipped_count"], 1)
+        self.assertEqual(result["inserted_count"], 0)
+        self.assertEqual(client.upsert_calls, [])
+
+    def test_concurrent_duplicate_is_an_idempotent_no_op(self):
+        decision = match_listing(
+            listing(title="Garden City apartment", location="Garden Estate"),
+            [entity()],
+        )
+        client = FakeRelationshipClient(existing_pairs={(101, 2)})
+
+        result = write_auto_candidates(client, [decision])
+
+        self.assertEqual(len(client.upsert_calls), 1)
+        self.assertEqual(result["inserted_count"], 0)
+        self.assertEqual(result["existing_relationships_skipped_count"], 1)
 
 
 if __name__ == "__main__":
