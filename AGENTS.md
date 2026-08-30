@@ -4,146 +4,230 @@
 
 This project is called LocationOS.
 
-LocationOS is a real-estate intelligence platform beginning with
-Nairobi apartments.
-
-LocationOS is not simply a property-listing website.
-
-Its purpose is to transform fragmented real-estate listings and
-other real-estate data into structured, verified, and useful
-real-estate intelligence.
+LocationOS is a real-estate intelligence platform beginning with Nairobi apartments. It is not simply a property-listing website. Its purpose is to transform fragmented real-estate listings, direct user submissions, public building information, and other real-estate data into structured, verified, and useful real-estate intelligence.
 
 The long-term relationship is:
 
 Listing
-→ Listing ID
-→ Matching Engine
-→ Apartment
-→ Building
+→ Listing Identity
+→ Apartment Identity
+→ Building Entity / Building Match
+→ Canonical Building Information
 → Location
 → Market
 → Investment Intelligence
 
----
-
 ## 2. Current Stage
 
-The current product stage is:
+Current product stage:
 
 Stage 1 — Nairobi Apartments.
 
-The initial source currently being scraped is:
+Current production ingestion source:
 
 BuyRentKenya.
 
-The scraper currently collects listing information and property
-images and stores structured information in Supabase.
+Planned additional ingestion sources include Property24, HassConsult, direct user-submitted listings, and approved public building-information sources. These should be developed as separate source modules and connected through LocationOS canonical layers rather than tightly coupling them to the BuyRentKenya scraper.
 
-Do not assume that future data sources or future stages are already
-implemented.
+## 3. Current Verified / Implemented Foundation
 
----
-
-## 3. Current Working Systems
-
-The repository currently contains working functionality for:
+The project has working functionality for:
 
 - BuyRentKenya listing collection
-- Listing extraction
-- Property normalization
-- Location normalization
-- Bedroom normalization
-- Bathroom normalization
-- Amenity normalization
-- Property storage in Supabase
-- Existing-property upsert/update
-- Duplicate protection
-- Property image extraction
-- Property image storage
+- JSON-LD extraction
+- property normalization
+- location normalization
+- bedroom normalization
+- bathroom normalization
+- pricing normalization
+- amenity normalization
+- Supabase property storage
+- source-listing upsert/update
+- duplicate protection using source + listing_id
+- property image extraction and storage
 - last_seen_at tracking
-- Scrape-run tracking
-- Scrape snapshots
-- Detection of listings missing from a completed scrape
-- GitHub-based project management
+- scrape-run tracking
+- scrape snapshots
+- missing-listing detection after safe run completion
+- scrape lifecycle states including completed / incomplete / failed logic in the current working implementation
+- price-history observation storage
+- price-history movement view
+- apartment identity records
+- source-listing-to-apartment relationships
+- automatic apartment-code generation through PostgreSQL
+- buildings table for future canonical/enriched building information
+- apartment_buildings relationship table
 
-The current implementation has been tested with:
+Known historical scraper checkpoint:
 
-999/999 listings successfully scraped.
+999 / 999 listings successfully processed in a full test.
 
-Do not rebuild these systems unnecessarily.
+Recent database checkpoint discussed during development:
 
----
+- total properties: 16,373
+- sale: 11,648
+- rent: 4,723
+- NULL listing type: 2
+- live: 15,245
+- inactive: 1,128
 
-## 4. Engineering Philosophy
+These counts are time-sensitive. Codex must re-check the actual production database before relying on them.
 
-Before changing code:
+## 4. Current Price History
 
-1. Inspect the existing implementation.
-2. Understand how the relevant components interact.
-3. Identify the smallest safe change.
-4. Make the change.
-5. Run appropriate tests.
-6. Verify that existing functionality still works.
+Price History V1 is implemented.
 
-Do not rewrite working systems merely to make the code look
-different.
+Current structures:
 
-Prefer incremental, reversible changes over large rewrites.
+- property_price_history
+- property_price_history_view
 
-If an existing implementation is working, preserve its behavior unless
-there is a demonstrated reason to change it.
+The history layer records asking-price observations per source listing and scrape run. The view derives previous price, current price, absolute change, percentage change, and direction such as initial / unchanged / increased / reduced.
 
----
+Observed asking prices are facts. Price movement is a derived metric. Do not describe asking-price history as transaction history.
 
-## 5. Database Safety
+## 5. Current Apartment Identity
 
-LocationOS uses Supabase/PostgreSQL.
+The listing layer and physical-apartment identity layer are now separate.
 
-The production database contains historical real-estate data.
+Current structures:
 
-Never:
+- apartments
+- apartment_listings
 
-- delete production property data without explicit approval
-- truncate production tables
-- automatically change the production schema
-- automatically create database columns from Python
-- drop tables
-- change column types without explicit approval
-- run destructive SQL without explicit approval
+A source listing remains identified by:
 
-If a database schema change is required:
+source + listing_id
 
-1. Explain why the change is required.
-2. Provide the proposed SQL.
-3. Wait for human approval.
-4. The SQL can then be executed manually.
-5. Verify the result.
-6. Only then modify application code if necessary.
+A LocationOS apartment receives an internal code such as:
 
----
+APT-000001
+APT-000003
 
-## 6. Secrets and Credentials
+Sequence gaps are acceptable and identifiers must never be recycled merely to make numbering consecutive.
 
-Never expose, print, commit, or document:
+The apartment identity foundation has been integration-tested with existing and new BuyRentKenya listings. Automatically created identities should remain unmatched until evidence supports a stronger match.
 
-- Supabase service-role keys
-- Supabase API keys
-- passwords
-- access tokens
-- GitHub tokens
-- .env contents
-- other credentials
+Listing ≠ Apartment.
 
-Never commit `.env`.
+Do not force multiple source listings into the same physical apartment without sufficient evidence.
 
-Use `.env.example` when documentation of environment variables is
-needed.
+## 6. Current Building Architecture
 
----
+Two different concepts must remain separate.
 
-## 7. Data Integrity
+### A. Listing-derived building identity
 
-LocationOS must preserve the distinction between:
+This is the current next implementation area.
+
+The intended new layer is:
+
+building_entities
+
+Its purpose is to represent an inferred physical-building identity derived from listing evidence, even when the official name, GPS, developer, year built, number of floors, or number of units is unknown.
+
+Candidate fields discussed:
+
+- id
+- building_code
+- canonical_name
+- normalized_name
+- location
+- standard_location
+- address_text
+- match_confidence
+- match_method
+- first_seen_at
+- last_seen_at
+- created_at
+- updated_at
+
+Do not assume this table exists until the production schema is inspected.
+
+### B. Canonical / enriched building information
+
+The existing buildings table is reserved for stronger building information gathered from trusted or public sources and later enrichment.
+
+Its known schema includes fields such as:
+
+- id
+- building_code
+- name
+- latitude
+- longitude
+- county
+- area
+- developer
+- year_built
+- number_of_floors
+- number_of_units
+- created_at
+- updated_at
+
+Do not populate canonical building facts from weak listing inference merely to avoid NULLs.
+
+The existing apartment_buildings table is intended to connect apartments to buildings while preserving:
+
+- match_status
+- match_confidence
+- match_method
+
+At the last verified checkpoint, the buildings table and apartment_buildings table were empty of production building matches.
+
+## 7. Building Matching Philosophy
+
+Building identification must combine multiple pieces of evidence. Do not rely on one field.
+
+Potential evidence includes:
+
+- explicit building/project names in titles or descriptions
+- road/street/address clues
+- normalized location
+- standard location
+- nearby landmarks
+- description similarity
+- agent/source patterns
+- amenities as supporting evidence
+- bedrooms / bathrooms / price only as supporting unit-level evidence
+- images later
+- GPS later
+- canonical public building information later
+- AI/semantic matching later
+
+Important findings from current BuyRentKenya data:
+
+- standard_location is far too broad to identify a building by itself
+- repeated titles are often listing templates and are not building identity
+- amenity fingerprints are useful only as supporting evidence
+- low confidence must not force a building match
+
+Unknown building is a valid result.
+
+## 8. Future Source Strategy
+
+Do not make LocationOS permanently dependent on scraping one portal.
+
+The target ingestion architecture is:
+
+BuyRentKenya ─────┐
+Property24 ───────┤
+HassConsult ──────┤
+Direct user data ─┤
+Public buildings ─┘
+        ↓
+source-specific ingestion
+        ↓
+normalization / enrichment
+        ↓
+LocationOS canonical identity layers
+
+Property24 and HassConsult should be implemented as separate modules and integrated later through common LocationOS entities. Do not retrofit their logic into BuyRentKenya-specific code unless a shared abstraction is intentionally introduced.
+
+Direct user-submitted listings are a launch/product priority because long-term data quality should improve beyond scraped portal data.
+
+## 9. Data Integrity
+
+Preserve the distinction between:
 
 - Observed fact
 - Derived metric
@@ -151,99 +235,13 @@ LocationOS must preserve the distinction between:
 - Human verified information
 - Unknown
 
-Never fabricate missing property information.
+Never fabricate missing information.
 
-If information cannot be reliably established, use:
+AI normalization/enrichment may later improve messy source fields such as location and bathrooms, but it must preserve source evidence and provenance.
 
-Unknown
+## 10. Scraper Safety
 
-or the appropriate null representation.
-
-Do not infer a building merely because a listing appears to be nearby.
-
-Low-confidence building matches must remain:
-
-Unknown building.
-
----
-
-## 8. Property Identity
-
-A source listing is currently identified using:
-
-source + listing_id
-
-This identity must be preserved.
-
-Do not introduce a different property identity model without
-understanding the existing database and obtaining approval.
-
-A source listing and a physical apartment are not necessarily the same
-thing.
-
-Future architecture will distinguish:
-
-Listing
-→ Apartment
-→ Building
-
-Multiple listings may eventually represent the same physical
-apartment.
-
----
-
-## 9. Building Matching
-
-Building identification is a major LocationOS capability.
-
-Possible evidence includes:
-
-- GPS or approximate location
-- exterior photos
-- interior photos
-- building appearance
-- number of floors
-- amenities
-- pool
-- gym
-- parking
-- apartment size
-- floor
-- bedrooms
-- price
-- nearby landmarks
-- description similarity
-
-The system must not force a building match when confidence is low.
-
-A confidence score should be treated as evidence, not certainty.
-
----
-
-## 10. Images
-
-Property images are important data.
-
-Do not remove or overwrite image records without understanding their
-relationship to the property.
-
-Images may later be used for:
-
-- building identification
-- apartment matching
-- duplicate detection
-- property intelligence
-- visual analysis
-
-Preserve image provenance whenever possible.
-
----
-
-## 11. Scraping
-
-The scraper currently works with BuyRentKenya.
-
-Do not make changes that unnecessarily disrupt:
+Do not unnecessarily disrupt:
 
 - request handling
 - retry behavior
@@ -253,172 +251,127 @@ Do not make changes that unnecessarily disrupt:
 - database uploads
 - image collection
 - scrape-run tracking
+- price-history recording
+- apartment-identity recording
 
-A scraper failure must not automatically cause existing properties
-to become inactive.
+A scraper failure must not automatically cause existing properties to become inactive.
 
-Inactive-property detection should only operate after a sufficiently
-complete and successful scrape.
+Before changing scrape lifecycle behavior, inspect the current database.py and scraper.py because safety hardening was added after the original documentation was written.
 
----
+## 11. Database Safety
 
-## 12. Scrape Snapshots
+LocationOS uses Supabase/PostgreSQL.
 
-LocationOS records properties found during scrape runs.
+Never, without explicit human approval:
 
-The purpose is to distinguish:
+- delete production property data
+- truncate tables
+- drop tables
+- change primary/unique identity
+- change column types
+- perform destructive mass updates
+- silently create/change production schema
+- rebuild production tables
+- remove historical information
 
-Property was never part of a monitored snapshot
+For schema changes:
 
-from:
+1. inspect actual schema
+2. explain why the change is required
+3. propose SQL
+4. wait for human approval
+5. execute only after approval
+6. verify resulting schema
+7. then update application code
+8. test on a controlled sample
 
-Property was previously observed but disappeared from a later
-successful snapshot.
+The actual Supabase schema is authoritative.
 
-Never mark thousands of historical properties inactive merely because
-they are absent from a partial or incomplete scrape.
+## 12. Secrets
 
----
+Never expose, print, commit, or document:
 
-## 13. Testing Rules
+- Supabase keys
+- service-role keys
+- passwords
+- access tokens
+- GitHub tokens
+- .env contents
+- other credentials
+
+Never commit `.env`.
+
+## 13. Testing
 
 Before a large scraper run:
 
-- test the relevant code on a small number of listings
+- test relevant code on one or a few listings
 - verify database behavior
-- verify images when relevant
+- verify history/identity rows
 - verify snapshot behavior
-- verify that failures do not cause destructive updates
+- verify failures do not trigger destructive updates
 
-After Python changes, run an appropriate syntax check.
+After Python changes, run syntax checks, for example:
 
-For example:
+python3 -m py_compile database.py scraper.py
 
-python3 -m py_compile filename.py
+For meaningful changes, run available tests.
 
-For meaningful changes, run the project's available tests.
-
-Never assume that code works merely because it looks correct.
-
----
-
-## 14. Git Rules
-
-Do not casually rewrite Git history.
+## 14. Git
 
 Before significant changes:
 
 - inspect git status
 - inspect relevant commits
-- understand whether local and remote branches differ
+- confirm local/remote relationship
 
-Do not run:
+Do not casually use:
 
 - git reset --hard
 - git rebase
 - git push --force
 
-unless explicitly instructed and the consequences are understood.
+Prefer small descriptive commits.
 
-Prefer small commits with descriptive messages.
-
----
+Do not assume an old documented commit hash is still current. Inspect Git first.
 
 ## 15. Documentation
 
-When implementing a significant LocationOS capability, update the
-relevant documentation under:
+When implementing a significant capability, update:
 
-docs/
+- AGENTS.md
+- docs/LOCATIONOS_ARCHITECTURE.md
+- docs/LOCATIONOS_CURRENT_STATE.md
+- docs/LOCATIONOS_DATABASE.md
+- docs/LOCATIONOS_STAGE_1_ROADMAP.md
 
-Documentation should reflect the actual implementation.
+Current-state documents must describe actual implementation, not plans.
 
-Do not document planned functionality as if it already exists.
+## 16. Current Priority
 
-Clearly distinguish:
+The immediate engineering priority is:
 
-Implemented
-In progress
-Planned
+1. inspect repository and production schema
+2. reconcile these updated docs with actual code/database
+3. implement the listing-derived building_entities identity layer
+4. connect listing/apartment evidence to building entities conservatively
+5. preserve the separate canonical buildings enrichment layer
+6. continue Stage 1 launch work without over-engineering pre-launch systems
 
----
-
-## 16. LocationOS Stage 1 Architecture
-
-The intended architecture is:
-
-REOS listings
-→ Listing IDs
-→ Matching Engine
-→ Apartment IDs
-→ Building
-→ Pricing
-→ Price History
-→ Location
-→ Market
-→ Transactions
-→ Investment Engine
-→ Apartment Intelligence
-
-The project should evolve iteratively.
-
-The goal is not to collect every possible field before producing value.
-
-The intended process is:
-
-Collect
-→ Structure
-→ Enrich
-→ Verify
-→ Calculate
-→ Learn
-→ Update
-
----
+Advanced AI matching, full market intelligence, off-plan risk, liquidity scoring, and sophisticated investment scoring are not the immediate implementation target unless explicitly requested.
 
 ## 17. Development Behavior
 
 When asked to implement a feature:
 
-1. Inspect relevant files first.
-2. Explain the current implementation briefly.
-3. Identify dependencies and risks.
-4. Propose the smallest safe implementation.
-5. Do not modify unrelated files.
-6. Implement.
-7. Test.
-8. Report exactly what changed.
-9. Report any assumptions or remaining risks.
+1. inspect relevant files and schema first
+2. explain the current implementation briefly
+3. identify dependencies and risks
+4. propose the smallest safe change
+5. do not modify unrelated files
+6. implement
+7. test
+8. report exactly what changed
+9. report assumptions and remaining risks
 
-If the requested approach is unsafe or technically weak, say so
-clearly and propose a safer alternative.
-
-Do not blindly follow a technically incorrect instruction.
-
----
-
-## 18. Human Approval Required
-
-Ask for approval before:
-
-- production database schema changes
-- destructive database operations
-- deleting historical data
-- changing the core property identity model
-- major scraper rewrites
-- changing Git history
-- changing production infrastructure
-- introducing irreversible migrations
-
----
-
-## 19. Current Priority
-
-The immediate priority is to preserve and strengthen the existing
-LocationOS data foundation.
-
-Do not jump ahead to advanced AI intelligence features simply because
-they appear in the long-term roadmap.
-
-The foundation must remain reliable before higher-level intelligence is
-built on top of it.
+Do not blindly follow a technically incorrect instruction. If the proposed approach is unsafe or weak, explain why and propose a better one.
