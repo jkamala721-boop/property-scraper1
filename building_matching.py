@@ -707,11 +707,9 @@ def fetch_dry_run_inputs(
 
 
 def _load_client() -> Any:
-    from supabase import create_client
+    from supabase_runtime import create_supabase_client
 
-    from config import SUPABASE_KEY, SUPABASE_URL
-
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
+    return create_supabase_client()
 
 
 def _is_ambiguous(decision: MatchDecision) -> bool:

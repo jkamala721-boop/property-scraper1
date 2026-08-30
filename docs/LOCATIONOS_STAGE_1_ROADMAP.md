@@ -135,6 +135,19 @@ The first controlled production write created `BENT-000003` / `Capital Garden`
 and candidate relationships for apartments `8`, `1063`, and `1026`. Canonical
 building tables were not changed.
 
+### Operational Building Identity Pipeline V1 — IMPLEMENTED
+
+Matching and discovery are composed by an explicit bounded command. It skips
+already-linked apartments, attempts matching first, uses discovery only after a
+plain no-match, and abstains on review, ambiguity, or conflict. Batches are
+keyset-paginated at a maximum of 100 while existing V1 evaluation limits remain
+50 internally. The pipeline is not integrated into the scraper and does not
+touch canonical building tables.
+
+The first 100-listing production batch completed with no errors and no writes:
+zero strong matches or discovery creation proposals, five review cases, and 96
+conservative abstentions. The next exclusive listing cursor is `3866377`.
+
 ### Canonical Building Enrichment — LATER / PRE-LAUNCH OR POST-LAUNCH
 
 Scrape/collect actual building/development information from approved public sources.

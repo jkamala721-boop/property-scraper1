@@ -226,6 +226,14 @@ Supported apartments receive `candidate` relationships with method
 the existing unique `(apartment_id, building_entity_id)` constraint as their
 final idempotency guard. No canonical-building data is created or changed.
 
+Building Identity Pipeline V1 adds no schema. It keyset-pages
+`apartment_listings`, checks `apartment_building_entities` before evaluation,
+and delegates writes to the existing matching/discovery functions. Existing
+relationships are never updated. The relationship uniqueness constraint and
+the discovery normalized/similar-entity recheck remain the database-facing
+idempotency protections. The pipeline never writes `buildings` or
+`apartment_buildings`.
+
 ## 8. Recommended Relationship Model
 
 Conceptual target:

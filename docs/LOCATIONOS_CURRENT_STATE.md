@@ -376,6 +376,46 @@ First controlled production checkpoint:
 - Canonical `buildings` and `apartment_buildings` remain empty at this
   time-sensitive checkpoint.
 
+### 15.1 Operational Building Identity Pipeline V1
+
+The explicit `building_identity_pipeline.py` command processes one bounded,
+keyset-paginated source batch at a time. Maximum batch size is 100; internal
+matcher and discovery calls remain capped at 50. The returned exclusive
+`after_listing_id` cursor advances subsequent batches without rereading the
+first page.
+
+The order is existing-relationship skip → deterministic matching → safe
+discovery fallback → abstention. Review, ambiguous, and conflicting matching
+results do not enter discovery. Writes delegate only to the existing matching
+and discovery write paths, so relationships remain candidates and automated
+evidence cannot seed future matcher references. The command reports proposed
+and created entities/relationships, review cases, abstentions, conflicts,
+errors, and the next cursor. It is not connected to the scraper.
+
+Python dependencies are pinned in `requirements.txt` with a complete
+`requirements.lock`. Operational commands accept `SUPABASE_URL` and
+`SUPABASE_KEY` from the environment and retain the ignored `config.py` fallback
+used by the existing GitHub Actions workflow. Credentials are not tracked.
+
+First operational production batch checkpoint (time-sensitive):
+
+- source: `BuyRentKenya`
+- batch size / listings examined: `100`
+- next exclusive listing cursor: `3866377`
+- already linked: `0`
+- strong existing-entity matches: `0`
+- new entity proposals / creations: `0 / 0`
+- matching relationships proposed / created: `0 / 0`
+- discovery relationships proposed / created: `0 / 0`
+- review cases: `5`
+- abstentions: `96`
+- conflicts: `40`
+- errors: `0`
+
+The batch made no database changes. Read-back counts remained two
+`building_entities`, seven `apartment_building_entities`, zero `buildings`, and
+zero `apartment_buildings`.
+
 Current design findings:
 
 Data analysis showed:

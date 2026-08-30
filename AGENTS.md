@@ -61,6 +61,7 @@ The project has working functionality for:
 - apartment_building_entities relationship table
 - deterministic Building Matching V1 dry-run and explicit candidate-write workflow
 - deterministic Building Entity Discovery V1 dry-run and explicit candidate-write workflow
+- bounded operational Building Identity Pipeline V1 orchestration
 
 Known historical scraper checkpoint:
 
@@ -186,6 +187,13 @@ higher, and adds candidate relationships with method
 `entity_discovery_v1_auto`. It must not fabricate tower/block precision from
 development-level evidence. Automated discovery relationships cannot seed
 Building Matching V1 reference evidence.
+
+Building Identity Pipeline V1 composes matching first and discovery only as a
+safe fallback. It processes an explicit keyset-paginated batch of at most 100
+source listing mappings, skips apartments that already have any entity
+relationship, and retains the matcher/discovery 50-record internal evaluation
+bounds. Ambiguous or conflicting matches never fall through to entity creation.
+It is an explicit command and is not integrated into the scraper.
 
 ### B. Canonical / enriched building information
 

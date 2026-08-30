@@ -878,22 +878,10 @@ def _eligible_relationship_rows(
     listings: Sequence[DiscoveryListing],
     entity: ExistingEntity,
 ) -> list[dict[str, Any]]:
-    signals = _proposal_signals(proposal, listings)
-    by_apartment: dict[int, list[CandidateSignal]] = {}
-    for signal in signals:
-        by_apartment.setdefault(signal.apartment_id, []).append(signal)
-
+    eligible_signals = _eligible_apartment_signals(proposal, listings)
     rows: list[dict[str, Any]] = []
-    for apartment_id, apartment_signals in sorted(by_apartment.items()):
+    for apartment_id, apartment_signals in sorted(eligible_signals.items()):
         individual_confidence = _score_group(apartment_signals)
-        has_context = bool(
-            _location_values_from_signals(apartment_signals)
-            or any(signal.road_evidence for signal in apartment_signals)
-            or any(signal.landmark_evidence for signal in apartment_signals)
-        )
-        if individual_confidence < REVIEW_THRESHOLD or not has_context:
-            continue
-
         listing_ids = sorted({signal.listing_id for signal in apartment_signals})
         sources = sorted({signal.source for signal in apartment_signals})
         rows.append(
@@ -960,6 +948,38 @@ def _eligible_relationship_rows(
             }
         )
     return rows
+
+
+def _eligible_apartment_signals(
+    proposal: DiscoveryProposal,
+    listings: Sequence[DiscoveryListing],
+) -> dict[int, list[CandidateSignal]]:
+    signals = _proposal_signals(proposal, listings)
+    by_apartment: dict[int, list[CandidateSignal]] = {}
+    for signal in signals:
+        by_apartment.setdefault(signal.apartment_id, []).append(signal)
+
+    eligible: dict[int, list[CandidateSignal]] = {}
+    for apartment_id, apartment_signals in sorted(by_apartment.items()):
+        individual_confidence = _score_group(apartment_signals)
+        has_context = bool(
+            _location_values_from_signals(apartment_signals)
+            or any(signal.road_evidence for signal in apartment_signals)
+            or any(signal.landmark_evidence for signal in apartment_signals)
+        )
+        if individual_confidence < REVIEW_THRESHOLD or not has_context:
+            continue
+        eligible[apartment_id] = apartment_signals
+    return eligible
+
+
+def eligible_supporting_apartment_ids(
+    proposal: DiscoveryProposal,
+    listings: Sequence[DiscoveryListing],
+) -> tuple[int, ...]:
+    """Return apartments that independently support this discovery proposal."""
+
+    return tuple(sorted(_eligible_apartment_signals(proposal, listings)))
 
 
 def _entity_from_inserted_row(row: dict[str, Any]) -> ExistingEntity:
@@ -1129,11 +1149,9 @@ def write_discovery_candidates(
 
 
 def _load_client() -> Any:
-    from supabase import create_client
+    from supabase_runtime import create_supabase_client
 
-    from config import SUPABASE_KEY, SUPABASE_URL
-
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
+    return create_supabase_client()
 
 
 def _load_json_bundle(path: str) -> tuple[list[DiscoveryListing], list[ExistingEntity]]:

@@ -226,6 +226,21 @@ adds individually supported apartment relationships as `candidate` with method
 `entity_discovery_v1_auto`. It never creates canonical `buildings`, and these
 automated relationships cannot seed Building Matching V1 reference evidence.
 
+### 8.2 Operational Building Identity Pipeline
+
+Building Identity Pipeline V1 is a separate explicit command that composes the
+approved systems without changing their scores or thresholds. It keyset-pages
+source listing mappings by `listing_id` in batches of at most 100 and keeps the
+existing 50-record matcher/discovery evaluation bounds internally.
+
+Each unlinked apartment is evaluated against existing eligible entities first.
+Only a strong unambiguous match uses the existing matching candidate-write
+path. A plain no-match may fall through to discovery. Review, ambiguity, and
+conflicting evidence abstain instead of creating a new entity. Discovery uses
+its existing write path and rejects multiple creation candidates supported by
+the same apartment as operationally ambiguous. The pipeline never writes
+canonical building tables and is not called by `scraper.py`.
+
 ## 9. Normalization and AI Enrichment
 
 Current deterministic normalization remains valuable and should not be removed casually.
