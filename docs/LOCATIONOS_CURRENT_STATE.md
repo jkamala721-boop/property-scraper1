@@ -268,11 +268,11 @@ At the last verified checkpoint:
 
 The relationship exists structurally but no production canonical-building matches were created. It must not be repurposed for provisional listing-derived building entities.
 
-## 13. Listing-Derived Building Entity Layer — NEXT / IN PROGRESS
+## 13. Listing-Derived Building Entity Layer — IMPLEMENTED / CONTROLLED SAMPLE
 
 The next agreed architecture separates listing-derived building identity from canonical enriched building information.
 
-Planned table:
+Current table:
 
 building_entities
 
@@ -280,7 +280,7 @@ Purpose:
 
 Represent a LocationOS-inferred building cluster/entity when listings appear to refer to the same physical building, even if verified building metadata is not yet known.
 
-Discussed candidate fields:
+Implemented fields:
 
 - id
 - building_code
@@ -295,9 +295,10 @@ Discussed candidate fields:
 - created_at
 - updated_at
 
-This table was the immediate next implementation step. Do not assume it exists until Supabase is inspected.
+The production table has been created. The first controlled provisional entity
+is `BENT-000002` (`Garden City`) with no canonical-building link.
 
-Planned relationship table:
+Current relationship table:
 
 apartment_building_entities
 
@@ -313,7 +314,28 @@ apartment_building_entities
 
 Match status, confidence, method, and evidence belong to this apartment-to-entity relationship, not to `building_entities`.
 
-## 14. Building Matching Findings So Far
+The controlled Garden City entity has candidate relationships to apartment IDs
+1 and 4 at confidence 0.90 using `manual_multi_signal_review`. These are not
+canonical-building relationships.
+
+## 14. Building Matching V1 — DETERMINISTIC DRY RUN
+
+An isolated deterministic matcher now supports read-only, explicitly bounded
+dry runs. It compares listing/apartment evidence with existing
+`building_entities` and trusted entity reference listings. It reports strong
+candidates, review candidates, or explicit abstentions with matched signals,
+conflicts, confidence, and an explanation.
+
+V1 does not create entities or relationships, does not update existing rows,
+and is not called by the production scraper. Automated proposals remain
+candidate recommendations only.
+
+Only confirmed relationships, or manually reviewed candidates using
+`manual_multi_signal_review` at the minimum confidence threshold, can seed
+reference evidence. High-confidence automated candidates are intentionally
+excluded to prevent recursive confidence propagation.
+
+Current design findings:
 
 Data analysis showed:
 
@@ -391,8 +413,8 @@ Immediate next work:
 
 1. inspect actual repository and production schema
 2. update/reconcile documentation with actual state
-3. implement building_entities safely
-4. create the first conservative listing-derived building identity workflow
+3. review and calibrate Building Matching V1 dry-run results
+4. approve a conservative listing-derived write workflow only after review
 5. preserve buildings as canonical/enriched information
 6. continue through Stage 1 launch-critical intelligence
 

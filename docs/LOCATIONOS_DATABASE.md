@@ -159,15 +159,15 @@ Last verified count:
 
 0 rows.
 
-## 7. Listing-Derived Building Entity — NEXT TABLE
+## 7. Listing-Derived Building Entity — IMPLEMENTED
 
-### building_entities — PLANNED / IMMEDIATE NEXT STEP
+### building_entities
 
 Purpose:
 
 Represent an inferred building identity derived from listing evidence before canonical building information is known.
 
-Proposed first-pass fields:
+Implemented fields:
 
 - id BIGINT identity primary key
 - building_code TEXT unique not null
@@ -184,11 +184,14 @@ Proposed first-pass fields:
 
 `building_entities` must not contain match status, confidence, method, or evidence. Those values describe an apartment's relationship to an inferred entity, not the entity itself.
 
-### apartment_building_entities — PLANNED / IMMEDIATE NEXT STEP
+Current controlled data includes `BENT-000002` (`Garden City`) with a nullable
+`canonical_building_id` that remains NULL.
+
+### apartment_building_entities
 
 Connects apartments to listing-derived building entities.
 
-Proposed first-pass fields:
+Implemented fields:
 
 - id BIGINT identity primary key
 - apartment_id BIGINT references apartments(id)
@@ -200,16 +203,12 @@ Proposed first-pass fields:
 - created_at TIMESTAMPTZ
 - updated_at TIMESTAMPTZ
 
-Before creating this table:
-
-1. inspect production schema
-2. confirm it does not already exist
-3. review relationship strategy
-4. propose migration SQL
-5. obtain human approval
-6. execute
-7. verify
-8. only then connect application code
+The controlled Garden City test has two candidate rows for apartment IDs 1 and
+4. The deterministic V1 matcher reads candidate rows as reference evidence only
+when `match_method = 'manual_multi_signal_review'` and confidence is at least
+the strong-candidate threshold. Confirmed rows are also eligible. Automated
+candidate rows are never eligible to seed reference evidence. The matcher does
+not write relationships or change database state.
 
 ## 8. Recommended Relationship Model
 

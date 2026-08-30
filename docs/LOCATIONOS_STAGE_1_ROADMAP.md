@@ -80,7 +80,7 @@ Existing buildings table is reserved for enriched/canonical facts.
 
 Relationship structure exists for later apartment-to-canonical-building matches; no verified production matches at last checkpoint.
 
-### building_entities — IMMEDIATE NEXT MILESTONE
+### building_entities — IMPLEMENTED
 
 Create a separate listing-derived building identity layer.
 
@@ -88,9 +88,13 @@ Goal:
 
 Listings/apartments can cluster toward a physical building identity without inventing canonical facts such as GPS, developer, year built, floors, or unit count.
 
-The entity has a nullable `canonical_building_id` to `buildings(id)`. Add the separate `apartment_building_entities` relationship for apartment-to-entity matching; it owns match status, confidence, method, and evidence. Do not put those fields on `building_entities` or repurpose `apartment_buildings`.
+The entity has a nullable `canonical_building_id` to `buildings(id)`. The
+separate `apartment_building_entities` relationship owns match status,
+confidence, method, and evidence. The first controlled Garden City entity and
+two candidate relationships are present; `apartment_buildings` remains
+separate.
 
-### Building Matching V1 — NEXT
+### Building Matching V1 — DETERMINISTIC DRY RUN IMPLEMENTED
 
 Use multiple signals conservatively:
 
@@ -103,6 +107,15 @@ Use multiple signals conservatively:
 - amenities as supporting evidence
 
 Low confidence remains unresolved.
+
+The current V1 implementation is read-only, uses an explicitly bounded sample,
+and produces explainable candidate or abstention reports. It is not connected
+to the scraper and does not create or update database rows. Calibration and
+review must precede any write workflow.
+
+Only confirmed relationships or sufficiently confident candidates explicitly
+marked `manual_multi_signal_review` may seed reference evidence. Automated
+candidate output cannot recursively seed later matches.
 
 ### Canonical Building Enrichment — LATER / PRE-LAUNCH OR POST-LAUNCH
 
@@ -213,8 +226,8 @@ Listing collection
 
 Current next milestone:
 
-Building Entity Identity
-→ Building Matching V1
+Review Building Matching V1 dry-run results
+→ approve/calibrate a controlled write workflow
 → Canonical Building Enrichment
 → Location / Basic Metrics
 → Product UI

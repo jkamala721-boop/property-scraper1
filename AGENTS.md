@@ -57,6 +57,9 @@ The project has working functionality for:
 - automatic apartment-code generation through PostgreSQL
 - buildings table for future canonical/enriched building information
 - apartment_buildings relationship table
+- listing-derived building_entities table
+- apartment_building_entities relationship table
+- deterministic Building Matching V1 dry-run recommendations
 
 Known historical scraper checkpoint:
 
@@ -118,15 +121,15 @@ Two different concepts must remain separate.
 
 ### A. Listing-derived building identity
 
-This is the current next implementation area.
+This listing-derived identity layer is implemented.
 
-The intended new layer is:
+The implemented entity layer is:
 
 building_entities
 
 Its purpose is to represent an inferred physical-building identity derived from listing evidence, even when the official name, GPS, developer, year built, number of floors, or number of units is unknown.
 
-Candidate fields discussed:
+Current fields:
 
 - id
 - building_code
@@ -141,7 +144,8 @@ Candidate fields discussed:
 - created_at
 - updated_at
 
-Do not assume this table exists until the production schema is inspected.
+The production schema remains authoritative and must still be inspected before
+future changes.
 
 `canonical_building_id` is nullable and references `buildings(id)` when a
 listing-derived entity has been verified against canonical building information.
@@ -158,6 +162,16 @@ match and its evidence:
 - evidence JSONB
 - created_at
 - updated_at
+
+Building Matching V1 is an isolated deterministic dry-run matcher. It reads an
+explicit, bounded listing sample and existing entity/reference evidence, emits
+candidate or abstention reports, and performs no database writes. Automated V1
+results must not be treated as confirmed relationships.
+
+Reference evidence may come from confirmed relationships or from candidate
+relationships explicitly marked `manual_multi_signal_review` at the minimum
+confidence threshold. Automated candidates must never recursively seed more
+automated candidates.
 
 ### B. Canonical / enriched building information
 
@@ -368,8 +382,9 @@ The immediate engineering priority is:
 
 1. inspect repository and production schema
 2. reconcile these updated docs with actual code/database
-3. implement the listing-derived building_entities identity layer
-4. connect listing/apartment evidence to building entities conservatively
+3. review and calibrate the deterministic Building Matching V1 dry run
+4. connect listing/apartment evidence to building entities conservatively only
+   after explicit approval of a write workflow
 5. preserve the separate canonical buildings enrichment layer
 6. continue Stage 1 launch work without over-engineering pre-launch systems
 

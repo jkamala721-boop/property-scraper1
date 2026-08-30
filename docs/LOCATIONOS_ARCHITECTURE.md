@@ -182,6 +182,22 @@ Current empirical findings:
 - description may contain useful development names/floors/landmarks
 - low confidence = unresolved
 
+Building Matching V1 is implemented as an isolated deterministic dry-run
+module. It requires an explicit, bounded listing sample, compares each listing
+against existing building entities and sufficiently strong reference
+relationships, and emits explainable candidate or abstention results. It is not
+connected to the scraper and has no database write path.
+
+V1 requires at least two independent building-identity signals. Agent/contact,
+floor, amenities, and posting proximity can increase confidence but cannot
+establish identity alone. Bedrooms, bathrooms, price, and listing type are
+reported only as weak compatibility signals and contribute no score.
+
+Entity reference listings are restricted to confirmed relationships and
+explicitly manual `manual_multi_signal_review` candidates above the minimum
+confidence threshold. Automated candidates cannot become reference evidence,
+preventing recursive confidence propagation.
+
 ## 9. Normalization and AI Enrichment
 
 Current deterministic normalization remains valuable and should not be removed casually.
