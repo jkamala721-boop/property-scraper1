@@ -1,642 +1,194 @@
-# LocationOS Architecture
+# LocationOS Architecture — Updated 2026-08-30
 
 ## 1. Purpose
 
-LocationOS is a real-estate intelligence platform.
+LocationOS is a real-estate intelligence platform focused initially on Nairobi apartments.
 
-The first implementation focuses on Nairobi apartments.
+The objective is to transform fragmented source listings, direct submissions, public building/development information, and historical observations into structured property intelligence.
 
-The objective is to transform fragmented property listings and
-real-estate data into structured property intelligence.
+The core idea remains:
 
-LocationOS should eventually allow the system to understand the
-relationship between:
+Listing ≠ Apartment ≠ Building information source.
 
-Listing
-→ Apartment
-→ Building
-→ Location
-→ Neighborhood
-→ Market
-→ Investment
+## 2. Updated High-Level Architecture
 
-LocationOS is therefore fundamentally different from a conventional
-property-listing portal.
-
-A listing is an observation of a property.
-
-The long-term objective is to identify the underlying physical
-apartment and building represented by those observations.
-
----
-
-## 2. Core Architecture
-
-The intended high-level architecture is:
-
-REPOSITORIES / DATA SOURCES
-        ↓
-LISTINGS
-        ↓
-LISTING IDENTIFICATION
-        ↓
-NORMALIZATION
-        ↓
-APARTMENT MATCHING
-        ↓
-BUILDING MATCHING
-        ↓
+DATA SOURCES
+    ↓
+source-specific ingestion
+    ↓
+LISTING OBSERVATIONS
+    ↓
+NORMALIZATION / ENRICHMENT
+    ↓
+APARTMENT IDENTITY
+    ↓
+LISTING-DERIVED BUILDING ENTITY
+    ↓
+BUILDING MATCH / VERIFICATION
+    ↓
+CANONICAL BUILDING INFORMATION
+    ↓
 LOCATION INTELLIGENCE
-        ↓
+    ↓
 MARKET INTELLIGENCE
-        ↓
+    ↓
 TRANSACTIONS / HISTORICAL DATA
-        ↓
+    ↓
 INVESTMENT ENGINE
-        ↓
+    ↓
 APARTMENT INTELLIGENCE
 
----
+## 3. Data Sources
 
-## 3. Listing Layer
-
-A listing represents an individual source observation.
-
-A listing may come from:
+Current:
 
 - BuyRentKenya
-- future property portals
-- future direct property sources
-- future transaction sources
-- other approved real-estate data sources
 
-The current primary source is:
+Planned:
 
-BuyRentKenya.
+- Property24
+- HassConsult
+- direct user-submitted listings
+- public building/development sources
+- future transaction/market sources
 
-Each source listing should retain:
+Each source should have an isolated ingestion path where practical and connect through common LocationOS entities.
 
-- source
-- source listing ID
-- source URL
-- listing type
-- raw/observed information where appropriate
-- extraction timestamp
-- last-seen information
-- source images where available
+## 4. Listing Layer
 
-The current source identity is:
+A listing is a source observation.
+
+Stable source identity:
 
 source + listing_id
 
-This identity must remain stable.
+A listing retains source URL, raw/observed data, normalized representation, images, timestamps, and source provenance.
 
----
+## 5. Price Observation Layer
 
-## 4. Normalization Layer
+Price History V1 is implemented.
 
-Raw source information should not immediately become assumed facts.
+Asking-price observations are stored historically and price movement is derived.
 
-The normalization layer converts inconsistent source information into
-structured fields.
+This enables:
 
-Examples include:
+- reductions
+- increases
+- unchanged periods
+- later negotiation signals
+- later trend analysis
 
-- location
-- bedrooms
-- bathrooms
-- pricing
-- amenities
-- property characteristics
+Asking prices must not be confused with transaction prices.
 
-Normalization should make data consistent while preserving the
-distinction between the original observation and the normalized
-representation.
+## 6. Apartment Identity Layer
 
-Normalization must not fabricate information.
+The apartment identity foundation is implemented.
 
-Unknown information should remain unknown.
+Current architecture:
 
----
+source listing
+→ apartment_listings
+→ apartments
 
-## 5. Apartment Layer
+A physical apartment may eventually have multiple listings.
 
-An apartment represents the underlying physical residential unit.
+Low-confidence apartment matches remain unresolved.
 
-The long-term apartment record may contain:
+## 7. Building Architecture — Two Layers
 
-- Apartment ID
-- Building ID
-- Floor
-- Unit number
-- Bedrooms
-- Bathrooms
-- Size
-- Balcony
-- Furnished status
-- Parking
-- Condition
-- Year built
-- Photos
-- Current status
+### 7.1 Building Entity
 
-The apartment layer is different from the listing layer.
+A building_entity is a listing-derived inferred physical-building identity.
 
-One physical apartment may eventually have multiple listings over time.
+It may exist before LocationOS knows:
 
-Therefore:
-
-Listing ≠ Apartment
-
-A listing may be linked to an apartment when sufficient evidence exists.
-
----
-
-## 6. Apartment Matching
-
-The matching engine attempts to determine whether multiple listings
-represent the same physical apartment.
-
-Potential evidence includes:
-
-- GPS or approximate location
-- building location
-- apartment size
-- bedrooms
-- bathrooms
-- floor
-- unit number
-- price
-- description similarity
-- photographs
-- amenities
-- parking
-- furnished status
-- other identifying characteristics
-
-The matching system should produce evidence and confidence.
-
-It must not force a match when evidence is insufficient.
-
-Low-confidence cases should remain unresolved rather than being
-incorrectly merged.
-
----
-
-## 7. Building Layer
-
-A building is the central physical anchor connecting multiple
-apartments.
-
-Initially, buildings may not have reliable names.
-
-Therefore LocationOS can create internal identifiers such as:
-
-BLD-00001
-BLD-00002
-BLD-00003
-
-These IDs represent system-created building entities and do not
-necessarily imply that the official building name is known.
-
-A building profile may eventually contain:
-
-- Building ID
-- Building name
+- official name
 - GPS
-- County
-- Area
-- Developer
-- Year built
-- Number of floors
-- Number of units
-- Amenities
-- Elevator
-- Generator
-- Borehole
-- Swimming pool
-- Gym
-- CCTV
-- Security
-- Fiber
-- Parking
-- Other facilities
-- Property manager
-- Management information
+- developer
+- year built
+- floors
+- unit count
 
----
+It should be created conservatively from multiple pieces of listing evidence.
 
-## 8. Building Matching Engine
+### 7.2 Canonical Building
 
-Building identification is one of the most difficult parts of
-LocationOS.
+The existing buildings table represents stronger/enriched building information.
 
-Listings may hide:
+Potential information includes:
 
-- building name
-- exact location
-- unit number
+- verified/name variants
+- GPS
+- county/area
+- developer
+- year built
+- floors
+- units
+- facilities
+- management information
 
-Therefore LocationOS must not assume the building.
+Canonical building information can later be scraped/enriched from approved public sources and matched back to building_entities.
 
-The matching engine may produce results such as:
+## 8. Building Matching
 
-BLD-00017 → 91%
-BLD-00102 → 67%
-BLD-00054 → 31%
+The system should not match buildings from one weak field.
 
-Potential evidence includes:
+Evidence may include:
 
-- GPS or approximate location
-- exterior photographs
-- interior photographs
-- building appearance
-- number of floors
-- amenities
-- pool
-- gym
-- parking
-- apartment size
-- floor
-- bedrooms
-- price
-- nearby landmarks
-- description similarities
+- explicit building/development names
+- road/address clues
+- normalized location
+- standard location
+- description semantics
+- landmarks
+- agent/source repetition
+- amenity fingerprints
+- images
+- GPS
+- canonical public building data
 
-Important rule:
+Current empirical findings:
 
-Low confidence = no forced match.
+- standard_location alone is far too broad
+- repeated titles can be generic templates
+- amenities support but do not identify buildings
+- description may contain useful development names/floors/landmarks
+- low confidence = unresolved
 
-The property can remain:
+## 9. Normalization and AI Enrichment
 
-Unknown building.
-
-This protects the integrity of the database.
+Current deterministic normalization remains valuable and should not be removed casually.
 
----
+Later AI normalization can improve:
 
-## 9. Pricing Layer
+- location interpretation
+- building/development names
+- address extraction
+- bathroom/field recovery
+- contradiction detection
+- semantic matching
 
-The pricing layer records current and historical pricing information.
+AI output must be marked as AI-derived/estimated until verified. Raw evidence must be preserved.
 
-For rental properties:
+## 10. Direct User Data
 
-- Asking rent
-- Actual rent where available
-- Service charge
-- Listing date
-- Date rented where available
-- Rent per square metre
+Long-term architecture should reduce dependence on scraping.
 
-For sale properties:
+Direct listing submissions should enter the same normalization and identity layers while preserving their provenance.
 
-- Asking sale price
-- Actual sale price where available
-- Listing date
-- Date sold where available
-- Sale price per square metre
+## 11. Data Trust Model
 
-Pricing should preserve historical observations.
+Every meaningful value should be attributable to one of:
 
-The system should eventually understand price movement rather than only
-the current asking price.
-
-Example:
-
-January    12.0M
-March      11.7M
-May        11.2M
-August     10.8M
-
-This enables analysis of:
-
-- price reductions
-- price movement
-- pricing trends
-- negotiation signals
-- historical asking behavior
-
----
-
-## 10. Location Intelligence
-
-Location intelligence should primarily be attached to the physical
-building/location rather than repeatedly duplicating the same
-information for every apartment.
-
-Potential location relationships include:
-
-- CBD
-- schools
-- hospitals
-- shopping centres
-- universities
-- office parks
-- industrial areas
-- bus stops
-- railway
-- highways
-- major landmarks
-
-Location intelligence should allow LocationOS to understand the
-environment surrounding an apartment.
-
----
-
-## 11. Market Intelligence
-
-LocationOS should eventually aggregate information at the
-neighborhood and market level.
-
-Potential indicators include:
-
-- rental demand
-- vacancy
-- population growth
-- income indicators
-- apartment supply
-- new developments
-- infrastructure projects
-- traffic
-- crime indicators
-- price growth
-- rent growth
-
-The intended relationship is:
-
-Apartment
-    ↓
-Building
-    ↓
-Neighborhood
-    ↓
-Nairobi market
-
----
-
-## 12. Investment Engine
-
-Once sufficient structured and historical data exists, LocationOS
-can calculate investment metrics.
-
-### Gross Rental Yield
-
-Annual rent
-────────────── × 100
-Property value
-
-### Net Yield
-
-Rent
-- vacancy
-- service charges
-- management
-- maintenance
-- other applicable costs
-────────────────────────────
-Investment value
-
-### Price per Square Metre
-
-Property price
-───────────────
-Apartment size
-
-### Rent per Square Metre
-
-Monthly rent
-────────────
-Apartment size
-
-These calculations must clearly distinguish observed values from
-derived metrics.
-
----
-
-## 13. Liquidity Score
-
-LocationOS should eventually estimate how easily an apartment can be
-resold.
-
-Potential inputs include:
-
-- days on market
-- area
-- building
-- unit type
-- price bracket
-- historical transactions
-
-Example:
-
-Liquidity: 84/100
-
-The score should be accompanied by an explanation of the evidence
-behind it.
-
----
-
-## 14. Off-Plan Risk
-
-For off-plan properties and developments, LocationOS should eventually
-evaluate:
-
-- developer history
-- previous project completion
-- delivery delays
-- project performance
-- historical reliability
-
-The output may eventually be:
-
-Low
-Medium
-High
-
-This capability should only become strong after sufficient
-developer/project data has been collected.
-
----
-
-## 15. Investment Score
-
-LocationOS may eventually calculate a combined investment score.
-
-An initial conceptual framework is:
-
-Yield — 40%
-Appreciation — 30%
-Vacancy risk — 20%
-Liquidity — 10%
-
-However, this should eventually become investor-dependent.
-
-Examples:
-
-Income investor:
-Greater weighting toward yield.
-
-Capital appreciation investor:
-Greater weighting toward appreciation.
-
-Conservative investor:
-Greater weighting toward liquidity and risk.
-
-The long-term objective is not to identify one universally "best"
-apartment.
-
-The objective is:
-
-Best apartment for this particular investor.
-
----
-
-## 16. Data Confidence
-
-Data confidence must exist throughout the system.
-
-Example:
-
-Apartment A
-
-Fair value: KES 11.4M
-Confidence: 91%
-
-Evidence:
-
-- 14 comparable properties
-- 6 transaction records
-- strong building match
-- recent price information
-
-Another property may have:
-
-Fair value: KES 11.4M
-Confidence: 43%
-
-Because:
-
-- only 2 comparable listings
-- no transaction data
-- weak building identification
-
-Confidence should communicate how strong the underlying evidence is.
-
-It should not be confused with certainty.
-
----
-
-## 17. Data Provenance
-
-LocationOS should preserve the distinction between:
-
-### Observed fact
-
-Directly obtained from a source.
-
-### Derived metric
-
-Calculated from observed data.
-
-### AI estimate
-
-Produced by an analytical model.
-
-### Human verified
-
-Confirmed by a human or trusted verification process.
-
-### Unknown
-
-The system does not have sufficient evidence.
+- observed fact
+- derived metric
+- AI estimate
+- human verified
+- unknown
 
 This distinction is fundamental to LocationOS trustworthiness.
 
----
-
-## 18. AI Data Steward
-
-Once the database becomes sufficiently large, an AI Data Steward can
-continuously monitor data quality.
-
-It should look for:
-
-- duplicates
-- contradictions
-- suspicious prices
-- missing information
-- outdated records
-- bad building matches
-- unusual changes
-- normalization problems
-- data quality issues
-
-Low-risk formatting and normalization problems may eventually be
-automatically corrected.
-
-Important factual changes should require evidence and, where
-appropriate, human review.
-
----
-
-## 19. Apartment Intelligence
-
-The eventual apartment page should not look like a conventional
-listing page.
-
-It should function as an investment intelligence interface.
-
-Example:
-
-Apartment
-2BR — Kilimani
-
-Current asking:
-KES 11.2M
-
-Estimated fair value:
-KES 10.6–11.0M
-
-Gross yield:
-7.8%
-
-Estimated net yield:
-6.4%
-
-Liquidity:
-81/100
-
-Investment score:
-86/100
-
-Building:
-BLD-00127
-
-Developer:
-XYZ
-
-Data confidence:
-92%
-
-Airbnb potential:
-High
-
-Market trend:
-Positive
-
-REOS assessment:
-Negotiate
-
-The system should explain why it reached the assessment.
-
----
-
-## 20. Iterative Development Principle
-
-LocationOS does not need to collect 100% of every possible field
-before moving forward.
-
-The intended process is:
+## 12. Iterative Principle
 
 Collect
 → Structure
@@ -646,53 +198,4 @@ Collect
 → Learn
 → Update
 
-The architecture should therefore support incremental improvement.
-
-The database should preserve historical information whenever
-practical rather than repeatedly replacing useful evidence.
-
----
-
-## 21. Long-Term Relationship
-
-The intended final relationship is:
-
-                    LocationOS
-                        │
-                    LISTINGS
-                        │
-                   Listing IDs
-                        ↓
-                 MATCHING ENGINE
-                        ↓
-                    APARTMENT
-                        │
-              ┌─────────┴─────────┐
-              ↓                   ↓
-           BUILDING             PRICES
-              │                   │
-              ↓                   ↓
-          DEVELOPER             HISTORY
-              │
-              ↓
-           LOCATION
-              │
-              ↓
-            MARKET
-              │
-              ↓
-            AIRBNB
-              │
-              ↓
-         TRANSACTIONS
-              │
-              ↓
-       INVESTMENT ENGINE
-              │
-              ↓
-     APARTMENT INTELLIGENCE
-
-This architecture is the long-term direction.
-
-The current implementation represents only the foundation of this
-architecture.
+LocationOS should launch useful intelligence before every field and matching model is perfect, while protecting identity and historical integrity.
